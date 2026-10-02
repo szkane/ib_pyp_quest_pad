@@ -1,0 +1,8 @@
+{
+  "name": "Quest Pad",
+  "description": "Multi-user task check-in, habit tracker, and celebration hub with Google Authentication and Firestore persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The user's Firebase Auth UID",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address",
+          "maxLength": 256
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of user",
+          "maxLength": 128
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Avatar photo URL",
+          "maxLength": 1024
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of profile creation",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of profile update",
+          "maxLength": 64
+        }
+      },
+      "required": ["id", "email"]
+    },
+    "QuestWorkbench": {
+      "title": "QuestWorkbench",
+      "description": "Complete user-isolated quest board, habits, goals, points ledger, and rewards",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The user's Firebase Auth UID",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "number",
+          "description": "Data schema version"
+        },
+        "settings": {
+          "type": "object",
+          "description": "Workbench settings like childName, parentPin, stepMode"
+        },
+        "categories": {
+          "type": "array",
+          "description": "Active task categories"
+        },
+        "goals": {
+          "type": "array",
+          "description": "Monthly goals list"
+        },
+        "tasks": {
+          "type": "array",
+          "description": "Daily quest definitions and sub-steps"
+        },
+        "checkins": {
+          "type": "object",
+          "description": "Check-in records keyed by date"
+        },
+        "ledger": {
+          "type": "array",
+          "description": "Points transaction history ledger"
+        },
+        "redeems": {
+          "type": "object",
+          "description": "Reward items catalog for daily, weekly, monthly tiers"
+        },
+        "redemptions": {
+          "type": "array",
+          "description": "Reward redemption records"
+        },
+        "timer": {
+          "type": "object",
+          "description": "Active focus timer state"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update",
+          "maxLength": 64
+        }
+      },
+      "required": ["ownerId", "version", "settings", "categories", "tasks"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Isolated user profile document"
+    },
+    "/workbenches/{userId}": {
+      "schema": "QuestWorkbench",
+      "description": "User-isolated Quest Pad workbench and persistent data"
+    }
+  }
+}

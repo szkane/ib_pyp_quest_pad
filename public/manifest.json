@@ -1,0 +1,30 @@
+{
+  "name": "IB PYP Quest Pad",
+  "short_name": "Quest Pad",
+  "description": "Multi-user task check-in, habit tracker, and celebration hub with Google Authentication and Firestore persistence.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fcf9f2",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "/apple-touch-icon-180x180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
