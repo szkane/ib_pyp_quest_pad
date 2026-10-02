@@ -19,6 +19,7 @@ import {
   fmtDate,
   fmtHeaderDate,
   fmtMonth,
+  fmtDateTime,
   playSoundStepDone,
   playSoundQuestAccomplished,
 } from './utils';
@@ -30,6 +31,7 @@ import {
   syncPointsIn,
   saveWorkbenchToFirestore,
   subscribeToWorkbench,
+  reconcileWorkbenchData,
 } from './services/workbench';
 import { Icon } from './components/Icons';
 import { AuthScreen } from './components/AuthScreen';
@@ -49,6 +51,10 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<string>('cat_study');
   const [parentUnlocked, setParentUnlocked] = useState(false);
   const [redeemTier, setRedeemTier] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [goalsEarnedCat, setGoalsEarnedCat] = useState<string>('all');
+  const [goalSelectedMonth, setGoalSelectedMonth] = useState<string>(() => monthKey(dateKey()));
+  const [showAllMonthGoals, setShowAllMonthGoals] = useState<boolean>(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // Database state
   const [db, setDb] = useState<QuestPadDB>(() => seedDemo('IB Learner'));
@@ -69,15 +75,20 @@ export default function App() {
 
   // Subscribe to user workbench data from Cloud Firestore
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setDataLoaded(false);
+      return;
+    }
 
     const unsub = subscribeToWorkbench(
       currentUser.uid,
       (data) => {
         setDb(data);
+        setDataLoaded(true);
       },
       (err) => {
         console.error('Workbench subscription error:', err);
+        setDataLoaded(true);
       }
     );
     return () => unsub();
@@ -100,6 +111,7 @@ export default function App() {
     try {
       await signOut(auth);
       setParentUnlocked(false);
+      setDataLoaded(false);
       showToast(lang === 'zh' ? '已退出登录' : 'Signed out successfully');
     } catch (err: any) {
       showToast(err.message || 'Sign out failed', 'bad');
@@ -134,6 +146,25 @@ export default function App() {
 
   const catBalance = (catId: string) => {
     return db.ledger.reduce((acc, entry) => (entry.catId === catId ? acc + entry.delta : acc), 0);
+  };
+
+  const catEarned = (catId: string) => {
+    return db.ledger
+      .filter((e) => e.catId === catId && e.delta > 0)
+      .reduce((sum, e) => sum + e.delta, 0);
+  };
+
+  const catSpent = (catId: string) => {
+    return db.ledger
+      .filter((e) => e.catId === catId && e.delta < 0)
+      .reduce((sum, e) => sum + Math.abs(e.delta), 0);
+  };
+
+  const handleRecalculateScores = () => {
+    updateDB((draft) => {
+      reconcileWorkbenchData(draft);
+    });
+    showToast(lang === 'zh' ? '积分已重新核算与校准！' : 'Scores recalculated & calibrated!', 'good');
   };
 
   const catEarnOn = (catId: string, dt: string) => {
@@ -324,11 +355,13 @@ export default function App() {
     e.target.value = '';
   };
 
-  if (authLoading) {
+  if (authLoading || (currentUser && !dataLoaded)) {
     return (
       <div className="auth-screen">
-        <div style={{ fontSize: 40, animation: 'celebBounce 1s infinite alternate' }}>🌟</div>
-        <p style={{ marginTop: 12, fontWeight: 800, color: 'var(--muted)' }}>Loading IB PYP Quest Pad...</p>
+        <div style={{ fontSize: 40, animation: 'celebBounce 1s infinite alternate' }}>☁️</div>
+        <p style={{ marginTop: 12, fontWeight: 800, color: 'var(--muted)' }}>
+          {lang === 'zh' ? '正在连接云端并同步数据...' : 'Connecting to Firebase & syncing data...'}
+        </p>
       </div>
     );
   }
@@ -610,17 +643,95 @@ export default function App() {
                   <Icon name="target" size={22} color="var(--green)" />
                   <span>{t('goals_title', lang)}</span>
                 </h2>
-                <span className="pill green">{fmtMonth(currentMonth, lang)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {!showAllMonthGoals ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <button
+                        className="btn xs soft"
+                        style={{ padding: '2px 8px', minHeight: 28 }}
+                        onClick={() => {
+                          const [y, m] = goalSelectedMonth.split('-').map(Number);
+                          const prevDate = new Date(y, m - 2, 1);
+                          setGoalSelectedMonth(monthKey(prevDate));
+                        }}
+                        title={lang === 'zh' ? '上个月' : 'Previous month'}
+                      >
+                        ◀
+                      </button>
+                      <span className="pill green" style={{ fontWeight: 900, fontSize: 13, height: 28, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Icon name="calendar" size={13} />
+                        <span>{fmtMonth(goalSelectedMonth, lang)}</span>
+                      </span>
+                      <button
+                        className="btn xs soft"
+                        style={{ padding: '2px 8px', minHeight: 28 }}
+                        onClick={() => {
+                          const [y, m] = goalSelectedMonth.split('-').map(Number);
+                          const nextDate = new Date(y, m, 1);
+                          setGoalSelectedMonth(monthKey(nextDate));
+                        }}
+                        title={lang === 'zh' ? '下个月' : 'Next month'}
+                      >
+                        ▶
+                      </button>
+                      {goalSelectedMonth !== currentMonth && (
+                        <button
+                          className="btn xs line"
+                          style={{ padding: '2px 8px', minHeight: 28 }}
+                          onClick={() => setGoalSelectedMonth(currentMonth)}
+                        >
+                          {t('back_to_cur_month', lang)}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="pill green" style={{ fontWeight: 900, fontSize: 13, height: 28, display: 'inline-flex', alignItems: 'center' }}>
+                      {lang === 'zh' ? '全部目标' : 'All Goals'}
+                    </span>
+                  )}
+
+                  <button
+                    className={`btn xs ${showAllMonthGoals ? 'green' : 'soft'}`}
+                    style={{ padding: '2px 10px', minHeight: 28 }}
+                    onClick={() => setShowAllMonthGoals((prev) => !prev)}
+                  >
+                    {showAllMonthGoals
+                      ? (lang === 'zh' ? '按月筛选' : 'Filter by Month')
+                      : (lang === 'zh' ? '显示所有' : 'View All')}
+                  </button>
+                </div>
               </div>
 
-              {!db.goals.length ? (
-                <div className="empty">{t('no_goals_set', lang)}</div>
-              ) : (
-                db.goals.map((g) => {
+              {(() => {
+                const filteredGoals = showAllMonthGoals
+                  ? db.goals
+                  : db.goals.filter((g) => {
+                      const ms = g.months && g.months.length ? g.months : (g.month ? [g.month] : []);
+                      if (!ms.length) return true;
+                      return ms.includes(goalSelectedMonth);
+                    });
+
+                if (!filteredGoals.length) {
+                  return (
+                    <div className="empty">
+                      {showAllMonthGoals
+                        ? t('no_goals_set', lang)
+                        : (lang === 'zh' ? `${fmtMonth(goalSelectedMonth, lang)} 暂无目标` : `No goals set for ${fmtMonth(goalSelectedMonth, lang)}.`)}
+                    </div>
+                  );
+                }
+
+                return filteredGoals.map((g) => {
                   const tasks = db.tasks.filter((t) => t.goalId === g.id);
                   let doneCount = 0;
                   let stepCount = 0;
+                  const ms = g.months && g.months.length ? g.months : (g.month ? [g.month] : []);
+                  const isAllYear = ms.length >= 12;
+
                   Object.keys(db.checkins).forEach((dt) => {
+                    const dtMonth = monthKey(dt);
+                    if (ms.length && !ms.includes(dtMonth)) return;
+
                     tasks.forEach((t) => {
                       const r = db.checkins[dt]?.[t.id];
                       if (!r?.steps) return;
@@ -629,25 +740,53 @@ export default function App() {
                       if (t.steps.length && sd >= t.steps.length) doneCount++;
                     });
                   });
+
                   const target = Math.max(0, Number(g.targetCount) || 0);
                   const pct = target ? Math.min(100, Math.round((doneCount / target) * 100)) : 0;
 
                   return (
-                    <div key={g.id} style={{ marginBottom: 14 }}>
-                      <div className="row-title" style={{ fontSize: 16.5 }}>
-                        {g.title}
+                    <div key={g.id} style={{ marginBottom: 14, padding: '12px 14px', background: 'var(--paper)', borderRadius: 'var(--r-btn)', border: '1.5px solid var(--ink)', boxShadow: '2px 2px 0 var(--ink)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <div className="row-title" style={{ fontSize: 16.5, margin: 0, fontWeight: 900 }}>
+                          {g.title}
+                        </div>
+                        {ms.length > 0 && (
+                          <span
+                            className="tag"
+                            style={{
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: 'var(--green-dark)',
+                              borderColor: 'rgba(16, 185, 129, 0.4)',
+                              fontWeight: 800,
+                              fontSize: 12,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                          >
+                            <span>📅</span>
+                            <span>
+                              {isAllYear
+                                ? (lang === 'zh' ? '全年目标' : 'All Year')
+                                : ms.length === 1
+                                ? fmtMonth(ms[0], lang)
+                                : `${ms.length} ${t('months_selected_count', lang)}`}
+                            </span>
+                          </span>
+                        )}
                       </div>
-                      {g.desc && <div className="row-sub">{g.desc}</div>}
-                      <div className="bar">
+                      {g.desc && <div className="row-sub" style={{ marginTop: 2, marginBottom: 6 }}>{g.desc}</div>}
+                      <div className="bar" style={{ margin: '8px 0' }}>
                         <i style={{ width: `${pct}%` }} />
                       </div>
-                      <div className="row-sub">
-                        {t('goals_progress', lang, { done: doneCount, target, steps: stepCount })}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, fontSize: 12.5, fontWeight: 700, color: 'var(--muted)' }}>
+                        <span>{t('goals_progress', lang, { done: doneCount, target, steps: stepCount })}</span>
+                        <span style={{ fontWeight: 900, color: 'var(--ink)' }}>{pct}%</span>
                       </div>
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </section>
 
             <section className="card">
@@ -656,24 +795,236 @@ export default function App() {
                   <Icon name="coin" size={22} color="var(--yellow)" />
                   <span>{t('pts_balance_title', lang)}</span>
                 </h2>
+                <button
+                  className="btn xs soft"
+                  style={{ padding: '4px 10px', minHeight: 28, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                  onClick={handleRecalculateScores}
+                  title={lang === 'zh' ? '重新根据任务打卡获取与心愿兑换消费校准积分' : 'Recalculate balance from task check-ins & reward redemptions'}
+                >
+                  <Icon name="check" size={13} color="var(--green)" />
+                  <span>{lang === 'zh' ? '校准与核对积分' : 'Recalculate Balance'}</span>
+                </button>
               </div>
+
               <div className="stat-grid">
                 {db.categories.map((c) => {
                   const bal = catBalance(c.id);
+                  const earned = catEarned(c.id);
+                  const spent = catSpent(c.id);
                   return (
-                    <div key={c.id} className="stat" style={{ borderLeft: `5px solid ${c.color}` }}>
-                      <b>
-                        {bal}{' '}
-                        <span style={{ fontSize: 18, verticalAlign: 'middle', marginLeft: 2 }}>
-                          {c.emoji}
+                    <div
+                      key={c.id}
+                      className="stat"
+                      style={{
+                        borderLeft: `5px solid ${c.color}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        padding: '12px 14px',
+                        background: 'var(--paper)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 }}>
+                        <b style={{ fontSize: 22 }}>
+                          {bal}{' '}
+                          <span style={{ fontSize: 18, verticalAlign: 'middle', marginLeft: 2 }}>
+                            {c.emoji}
+                          </span>
+                        </b>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)' }}>
+                          {catName(c.id)}
                         </span>
-                      </b>
-                      <span>{catName(c.id)}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, marginTop: 8, flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            color: 'var(--green-dark)',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                          }}
+                        >
+                          +{earned} {lang === 'zh' ? '任务获取' : 'Acquired'}
+                        </span>
+                        {spent > 0 && (
+                          <span
+                            style={{
+                              color: 'var(--coral)',
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                            }}
+                          >
+                            -{spent} {lang === 'zh' ? '兑换消费' : 'Consumed'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
+
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--edge)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
+                <span>
+                  {lang === 'zh'
+                    ? '📊 积分核算逻辑：任务打卡实时获取 (+) · 心愿兑换批准后实时扣除 (-)'
+                    : '📊 Scoring Logic: Task acquisitions (+) · Approved reward redemptions (-)'}
+                </span>
+                <span style={{ fontWeight: 800, color: 'var(--ink)' }}>
+                  {lang === 'zh'
+                    ? `门类总结余: ${db.categories.reduce((acc, c) => acc + catBalance(c.id), 0)}`
+                    : `Total Balance: ${db.categories.reduce((acc, c) => acc + catBalance(c.id), 0)}`}
+                </span>
+              </div>
             </section>
+
+            {/* Latest 30 Earned Points Records */}
+            {(() => {
+              const allEarned = [...db.ledger]
+                .filter((e) => e.delta > 0)
+                .sort((a, b) => {
+                  const tsA = a.ts || (a.date ? new Date(a.date.replace(/-/g, '/')).getTime() : 0);
+                  const tsB = b.ts || (b.date ? new Date(b.date.replace(/-/g, '/')).getTime() : 0);
+                  return tsB - tsA;
+                });
+
+              const latest30 = allEarned.slice(0, 30);
+              const filtered = goalsEarnedCat === 'all'
+                ? latest30
+                : latest30.filter((r) => r.catId === goalsEarnedCat);
+
+              const totalPts30 = latest30.reduce((acc, r) => acc + r.delta, 0);
+
+              return (
+                <section className="card">
+                  <div className="card-h">
+                    <div>
+                      <h2>
+                        <Icon name="star" size={22} color="var(--yellow)" />
+                        <span>{t('recent_earned_pts', lang)}</span>
+                      </h2>
+                      <div className="hint" style={{ marginTop: 2 }}>
+                        {t('recent_earned_pts_desc', lang)}
+                      </div>
+                    </div>
+                    {latest30.length > 0 && (
+                      <span className="pill green" style={{ fontWeight: 900 }}>
+                        {lang === 'zh'
+                          ? `最新 ${latest30.length} 条 · 共 +${totalPts30} 积分`
+                          : `Latest ${latest30.length} · +${totalPts30} pts`}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Filter Pills */}
+                  {latest30.length > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 6,
+                        overflowX: 'auto',
+                        paddingBottom: 6,
+                        marginBottom: 12,
+                        scrollbarWidth: 'none',
+                      }}
+                    >
+                      <button
+                        className={`btn xs ${goalsEarnedCat === 'all' ? 'green' : 'soft'}`}
+                        style={{ borderRadius: 'var(--r-pill)', padding: '3px 12px', flexShrink: 0 }}
+                        onClick={() => setGoalsEarnedCat('all')}
+                      >
+                        {lang === 'zh' ? '全部' : 'All'} ({latest30.length})
+                      </button>
+                      {db.categories.map((c) => {
+                        const count = latest30.filter((r) => r.catId === c.id).length;
+                        if (count === 0) return null;
+                        const isCur = goalsEarnedCat === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            className={`btn xs ${isCur ? 'active' : 'soft'}`}
+                            style={{
+                              borderRadius: 'var(--r-pill)',
+                              padding: '3px 10px',
+                              flexShrink: 0,
+                              borderColor: isCur ? 'var(--ink)' : `${c.color}66`,
+                              background: isCur ? c.color : `${c.color}15`,
+                              color: isCur ? '#fff' : 'var(--ink)',
+                              fontWeight: 800,
+                            }}
+                            onClick={() => setGoalsEarnedCat(isCur ? 'all' : c.id)}
+                          >
+                            <span style={{ marginRight: 4 }}>{c.emoji}</span>
+                            <span>{catName(c.id)}</span>
+                            <span style={{ opacity: 0.85, marginLeft: 4 }}>({count})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!filtered.length ? (
+                    <div className="empty" style={{ padding: '24px 16px' }}>
+                      <div style={{ fontSize: 36, marginBottom: 8 }}>🌟</div>
+                      <b style={{ display: 'block', fontSize: 15, marginBottom: 4 }}>
+                        {lang === 'zh' ? '暂无积分获得明细' : 'No Earned Points Yet'}
+                      </b>
+                      <span className="hint">{t('no_earned_pts', lang)}</span>
+                    </div>
+                  ) : (
+                    <div className="earned-records-list">
+                      {filtered.map((entry, idx) => {
+                        const color = catColor(entry.catId);
+                        const emoji = catPointEmoji(entry.catId);
+                        const name = catName(entry.catId);
+                        const timeStr = fmtDateTime(entry.ts, entry.date, lang);
+
+                        return (
+                          <div
+                            key={entry.id || idx}
+                            className="earned-record-item"
+                            style={{ borderLeft: `6px solid ${color}` }}
+                          >
+                            <div className="earned-record-left">
+                              <div className="earned-record-badge">
+                                <span className="pts-earn-tag">
+                                  <span>+{entry.delta}</span>
+                                  <span style={{ fontSize: 14 }}>{emoji}</span>
+                                </span>
+                                <span
+                                  className="earned-cat-pill"
+                                  style={{
+                                    background: `${color}18`,
+                                    color,
+                                    borderColor: `${color}66`,
+                                  }}
+                                >
+                                  {name}
+                                </span>
+                              </div>
+                              <div className="earned-record-reason" title={entry.reason}>
+                                {entry.reason || (lang === 'zh' ? '自主探究打卡' : 'Quest step accomplished')}
+                              </div>
+                            </div>
+                            <div className="earned-record-right">
+                              <span
+                                className="earned-record-time"
+                                title={entry.ts ? new Date(entry.ts).toLocaleString() : entry.date}
+                              >
+                                <Icon name="calendar" size={13} color="var(--muted)" />
+                                <span>{timeStr}</span>
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -989,7 +1340,7 @@ export default function App() {
                     onClick={() => {
                       setModal({
                         type: 'goal',
-                        draft: { id: '', title: '', desc: '', targetCount: 30 },
+                        draft: { id: '', title: '', desc: '', targetCount: 30, month: currentMonth, months: [currentMonth] },
                       });
                     }}
                   >
@@ -1001,7 +1352,38 @@ export default function App() {
                   {db.goals.map((g) => (
                     <div key={g.id} className="row">
                       <div className="row-main">
-                        <div className="row-title">{g.title}</div>
+                        <div className="row-title">
+                          <span>{g.title}</span>
+                          {(() => {
+                            const ms = g.months && g.months.length ? g.months : (g.month ? [g.month] : []);
+                            if (!ms.length) return null;
+                            const isAll = ms.length >= 12;
+                            return (
+                              <span
+                                className="tag"
+                                style={{
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: 'var(--green-dark)',
+                                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                                  fontWeight: 800,
+                                  fontSize: 12,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}
+                              >
+                                <span>📅</span>
+                                <span>
+                                  {isAll
+                                    ? (lang === 'zh' ? '全年' : 'All Year')
+                                    : ms.length === 1
+                                    ? fmtMonth(ms[0], lang)
+                                    : `${ms.length} ${t('months_selected_count', lang)}`}
+                                </span>
+                              </span>
+                            );
+                          })()}
+                        </div>
                         {g.desc && <div className="row-sub">{g.desc}</div>}
                         <div className="row-sub">
                           {lang === 'zh' ? '目标达成: ' : 'Target: '}
@@ -1502,10 +1884,10 @@ export default function App() {
             saveWorkbenchToFirestore(currentUser.uid, blank);
             showToast('All data cleared');
           } else if (m.action === 'import') {
-            const imported = { ...m.payload, ownerId: currentUser.uid };
-            setDb(imported);
-            saveWorkbenchToFirestore(currentUser.uid, imported);
-            showToast('Data restored', 'good');
+            const sanitized = reconcileWorkbenchData({ ...m.payload, ownerId: currentUser.uid });
+            setDb(sanitized);
+            saveWorkbenchToFirestore(currentUser.uid, sanitized);
+            showToast(lang === 'zh' ? '数据导入并重新校准积分成功！' : 'Data restored & scores calibrated!', 'good');
           }
         }}
         onSaveTask={(draft) => {

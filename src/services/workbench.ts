@@ -229,6 +229,69 @@ export function seedDemo(childName = 'IB Learner', ownerId?: string): QuestPadDB
   return d;
 }
 
+export function reconcileWorkbenchData(d: QuestPadDB): QuestPadDB {
+  if (!d) return d;
+  if (!d.ledger) d.ledger = [];
+  if (!d.checkins) d.checkins = {};
+  if (!d.tasks) d.tasks = [];
+  if (!d.redemptions) d.redemptions = [];
+  if (!d.categories) d.categories = CAT_DEFS.map((c) => ({ ...c }));
+
+  // 1. Re-sync all task check-ins into ledger
+  const checkinDates = Object.keys(d.checkins);
+  d.tasks.forEach((task) => {
+    checkinDates.forEach((date) => {
+      syncPointsIn(d, date, task);
+    });
+  });
+
+  // 2. Ensure every approved redemption has exactly one corresponding spend entry in the ledger
+  const approvedRedemptions = d.redemptions.filter((r) => r.status === 'approved');
+  const existingSpendIds = new Set<string>();
+  const approvedIds = new Set(approvedRedemptions.map((r) => r.id));
+
+  // Clean up any spend ledger entries for redemptions that are no longer approved or deleted
+  d.ledger = d.ledger.filter((entry) => {
+    if (entry.kind === 'spend' && entry.redemptionId) {
+      if (!approvedIds.has(entry.redemptionId)) return false;
+      if (existingSpendIds.has(entry.redemptionId)) return false;
+      existingSpendIds.add(entry.redemptionId);
+    }
+    return true;
+  });
+
+  // For any approved redemption that lacks a spend entry in ledger, add it!
+  approvedRedemptions.forEach((r) => {
+    const hasSpend = d.ledger.some(
+      (e) => e.kind === 'spend' && (e.redemptionId === r.id || e.id === 'spend|' + r.id)
+    );
+    if (!hasSpend) {
+      d.ledger.push({
+        id: 'spend|' + r.id,
+        ts: r.decidedAt || r.ts || Date.now(),
+        date: r.appliedDate || dateKey(),
+        catId: r.catId,
+        delta: -Math.abs(r.cost),
+        reason: 'Reward: ' + r.name,
+        kind: 'spend',
+        redemptionId: r.id,
+      });
+    }
+  });
+
+  // 3. Remove duplicate earn/adjust entries with the exact same id
+  const seenIds = new Set<string>();
+  d.ledger = d.ledger.filter((entry) => {
+    if (entry.id) {
+      if (seenIds.has(entry.id)) return false;
+      seenIds.add(entry.id);
+    }
+    return true;
+  });
+
+  return d;
+}
+
 export async function saveWorkbenchToFirestore(userId: string, data: QuestPadDB): Promise<void> {
   const path = `workbenches/${userId}`;
   try {
@@ -257,7 +320,8 @@ export function subscribeToWorkbench(
         if (raw.settings && raw.settings.childName === 'Hilson') {
           raw.settings.childName = 'IB Learner';
         }
-        onData(raw);
+        const reconciled = reconcileWorkbenchData(raw);
+        onData(reconciled);
       } else {
         // First time initialization for new user
         const initial = seedDemo('IB Learner', userId);

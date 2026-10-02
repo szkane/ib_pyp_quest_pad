@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Icon } from './Icons';
 import { t } from '../utils';
-import { auth, googleProvider, signInWithPopup } from '../firebase';
+import { auth, googleProvider, signInWithPopup, db, doc, setDoc } from '../firebase';
 
 interface AuthScreenProps {
   lang: string;
@@ -15,7 +15,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ lang, onSwitchLang, onTo
   const handleGoogleLogin = async () => {
     try {
       setLoading(true);
-      await signInWithPopup(auth, googleProvider);
+      const res = await signInWithPopup(auth, googleProvider);
+      if (res.user) {
+        try {
+          const userRef = doc(db, 'users', res.user.uid);
+          await setDoc(
+            userRef,
+            {
+              id: res.user.uid,
+              email: res.user.email || '',
+              displayName: res.user.displayName || '',
+              photoURL: res.user.photoURL || '',
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        } catch {
+          // Non-blocking profile sync
+        }
+      }
       onToast(lang === 'zh' ? '登录成功！' : 'Signed in successfully!', 'good');
     } catch (err: any) {
       if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {

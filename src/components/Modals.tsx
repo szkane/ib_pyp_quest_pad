@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Icon } from './Icons';
-import { t, monthKey, pad2 } from '../utils';
+import { t, dateKey, monthKey, pad2 } from '../utils';
 import { QuestPadDB, TaskStep } from '../types';
 
 interface ModalsProps {
@@ -587,6 +587,222 @@ const TaskModal: React.FC<{
   );
 };
 
+interface GoalModalProps {
+  modal: any;
+  lang: string;
+  onClose: () => void;
+  onSaveGoal: (draft: any) => void;
+  onToast: (msg: string, kind?: 'good' | 'bad') => void;
+}
+
+const GoalModal: React.FC<GoalModalProps> = ({
+  modal,
+  lang,
+  onClose,
+  onSaveGoal,
+  onToast,
+}) => {
+  const dg = modal.draft;
+  const today = dateKey();
+  const currentMonth = monthKey(today);
+  const currentYear = parseInt(currentMonth.split('-')[0], 10);
+
+  const initialMonths: string[] = (() => {
+    if (dg.months && Array.isArray(dg.months) && dg.months.length > 0) return [...dg.months];
+    if (dg.month) return [dg.month];
+    return [currentMonth];
+  })();
+
+  const [title, setTitle] = useState(dg.title || '');
+  const [desc, setDesc] = useState(dg.desc || '');
+  const [targetCount, setTargetCount] = useState<number>(dg.targetCount || 30);
+  const [months, setMonths] = useState<string[]>(initialMonths);
+  const [targetYear, setTargetYear] = useState<number>(() => {
+    if (initialMonths.length > 0) {
+      const y = parseInt(initialMonths[0].split('-')[0], 10);
+      if (!isNaN(y)) return y;
+    }
+    return currentYear;
+  });
+
+  const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthsZh = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+
+  const toggleMonth = (mk: string) => {
+    setMonths((prev) => {
+      if (prev.includes(mk)) {
+        if (prev.length === 1) {
+          onToast(t('at_least_one_month', lang), 'bad');
+          return prev;
+        }
+        return prev.filter((m) => m !== mk);
+      }
+      return [...prev, mk].sort();
+    });
+  };
+
+  const selectAllYear = () => {
+    const allForYear = Array.from({ length: 12 }, (_, i) => `${targetYear}-${pad2(i + 1)}`);
+    const otherYears = months.filter((m) => !m.startsWith(`${targetYear}-`));
+    setMonths([...otherYears, ...allForYear].sort());
+  };
+
+  const selectThisMonth = () => {
+    setTargetYear(currentYear);
+    setMonths([currentMonth]);
+  };
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      onToast(lang === 'zh' ? '请输入目标名称' : 'Please enter goal title', 'bad');
+      return;
+    }
+    if (!months.length) {
+      onToast(t('at_least_one_month', lang), 'bad');
+      return;
+    }
+    const updated = {
+      ...dg,
+      title: title.trim(),
+      desc: desc.trim(),
+      targetCount: Math.max(1, Number(targetCount) || 30),
+      month: months[0],
+      months: months,
+    };
+    onSaveGoal(updated);
+  };
+
+  return (
+    <div className="modal-mask" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" style={{ maxWidth: 540 }}>
+        <div className="modal-h">
+          <h3>{dg.id ? (lang === 'zh' ? '编辑目标' : 'Edit Goal') : t('add_new_goal', lang)}</h3>
+          <button className="icon-btn" onClick={onClose}>
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+        <div className="modal-b">
+          <div className="field">
+            <label>{t('goal_title', lang)}</label>
+            <input
+              className="input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={lang === 'zh' ? '例如：每月自主探究与行动' : 'e.g. Monthly Self-Management & Growth'}
+            />
+          </div>
+          <div className="field">
+            <label>{t('goal_desc', lang)}</label>
+            <textarea
+              className="input"
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder={lang === 'zh' ? '给孩子的鼓励与说明' : 'Notes & encouragement'}
+            />
+          </div>
+
+          <div className="field">
+            <label>{t('goal_target', lang)}</label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              max="999"
+              value={targetCount}
+              onChange={(e) => setTargetCount(Number(e.target.value))}
+            />
+          </div>
+
+          {/* Target Month Selector */}
+          <div className="field">
+            <label>{t('goal_month', lang)}</label>
+            <div className="month-picker-container">
+              <div className="month-picker-header">
+                <span className="month-picker-title">
+                  <Icon name="calendar" size={14} color="var(--ink)" />
+                  <span>{lang === 'zh' ? '选择目标适用月份' : 'Select Target Months'}</span>
+                </span>
+                <div className="year-selector">
+                  <button
+                    type="button"
+                    className="btn xs soft"
+                    style={{ padding: '0 8px', minHeight: 28 }}
+                    onClick={() => setTargetYear((y) => y - 1)}
+                    title={lang === 'zh' ? '上一年' : 'Previous Year'}
+                  >
+                    ◀
+                  </button>
+                  <span className="month-year-badge">{targetYear}</span>
+                  <button
+                    type="button"
+                    className="btn xs soft"
+                    style={{ padding: '0 8px', minHeight: 28 }}
+                    onClick={() => setTargetYear((y) => y + 1)}
+                    title={lang === 'zh' ? '下一年' : 'Next Year'}
+                  >
+                    ▶
+                  </button>
+                  <button
+                    type="button"
+                    className="btn xs soft"
+                    style={{ minHeight: 28, padding: '0 10px' }}
+                    onClick={selectAllYear}
+                  >
+                    {t('month_select_all', lang)}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn xs soft"
+                    style={{ minHeight: 28, padding: '0 10px' }}
+                    onClick={selectThisMonth}
+                  >
+                    {t('month_cur_only', lang)}
+                  </button>
+                </div>
+              </div>
+
+              <div className="month-pick-grid">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
+                  const mk = `${targetYear}-${pad2(m)}`;
+                  const isSelected = months.includes(mk);
+                  const label = lang === 'zh' ? monthsZh[m - 1] : monthsEn[m - 1];
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`month-btn ${isSelected ? 'on' : ''}`}
+                      onClick={() => toggleMonth(mk)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="month-summary-bar">
+                <div className="month-summary-tag">
+                  <span>📅</span>
+                  <span>
+                    {months.length} {t('months_selected_count', lang)}: {months.length ? months.map((m) => m.replace('-', '.')).join(', ') : (lang === 'zh' ? '未选择月份' : 'None')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="modal-f">
+          <button type="button" className="btn soft sm" onClick={onClose}>
+            {t('modal_cancel', lang)}
+          </button>
+          <button type="button" className="btn sm green" onClick={handleSave}>
+            {t('modal_save', lang)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Modals: React.FC<ModalsProps> = ({
   modal,
   db,
@@ -720,50 +936,14 @@ export const Modals: React.FC<ModalsProps> = ({
 
   // 5. Goal Modal
   if (modal.type === 'goal') {
-    const dg = modal.draft;
     return (
-      <div className="modal-mask" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="modal" role="dialog">
-          <div className="modal-h">
-            <h3>{dg.id ? (lang === 'zh' ? '编辑目标' : 'Edit Goal') : t('add_new_goal', lang)}</h3>
-            <button className="icon-btn" onClick={onClose}>
-              <Icon name="close" size={16} />
-            </button>
-          </div>
-          <div className="modal-b">
-            <div className="field">
-              <label>{t('goal_title', lang)}</label>
-              <input className="input" id="goalTitleInput" defaultValue={dg.title} placeholder="Goal title" />
-            </div>
-            <div className="field">
-              <label>{t('goal_desc', lang)}</label>
-              <textarea className="input" id="goalDescInput" defaultValue={dg.desc || ''} placeholder="Notes" />
-            </div>
-            <div className="field">
-              <label>{t('goal_target', lang)}</label>
-              <input className="input" type="number" min="1" max="999" id="goalTargetInput" defaultValue={dg.targetCount || 30} />
-            </div>
-          </div>
-          <div className="modal-f">
-            {fCancel}
-            <button
-              className="btn sm green"
-              onClick={() => {
-                const titleEl = document.getElementById('goalTitleInput') as HTMLInputElement;
-                const descEl = document.getElementById('goalDescInput') as HTMLTextAreaElement;
-                const targetEl = document.getElementById('goalTargetInput') as HTMLInputElement;
-
-                dg.title = titleEl?.value?.trim() || '';
-                dg.desc = descEl?.value?.trim() || '';
-                dg.targetCount = Number(targetEl?.value) || 30;
-                onSaveGoal(dg);
-              }}
-            >
-              {t('modal_save', lang)}
-            </button>
-          </div>
-        </div>
-      </div>
+      <GoalModal
+        modal={modal}
+        lang={lang}
+        onClose={onClose}
+        onSaveGoal={onSaveGoal}
+        onToast={onToast}
+      />
     );
   }
 

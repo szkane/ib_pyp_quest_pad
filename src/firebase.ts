@@ -38,13 +38,14 @@ googleProvider.setCustomParameters({
 
 export async function testConnection() {
   try {
-    if (auth.currentUser) {
-      await getDocFromServer(doc(db, 'workbenches', auth.currentUser.uid));
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('Please check your Firebase configuration or network connection.');
     }
-  } catch {
-    // Non-blocking connection check
   }
 }
+testConnection();
 
 export enum OperationType {
   CREATE = 'create',

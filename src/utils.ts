@@ -59,6 +59,35 @@ export function fmtDur(sec: number | null | undefined): string {
   return pad2(m) + ':' + pad2(s);
 }
 
+export function fmtDateTime(ts?: number, dateStr?: string, lang?: string): string {
+  if (ts && !isNaN(ts) && ts > 0) {
+    const d = new Date(ts);
+    const hours = pad2(d.getHours());
+    const mins = pad2(d.getMinutes());
+    const timePart = `${hours}:${mins}`;
+
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now.getTime() - 86400000);
+    const isYesterday = d.toDateString() === yesterday.toDateString();
+
+    if (lang === 'zh') {
+      if (isToday) return `今天 ${timePart}`;
+      if (isYesterday) return `昨天 ${timePart}`;
+      return `${d.getMonth() + 1}月${d.getDate()}日 ${timePart}`;
+    } else {
+      if (isToday) return `Today, ${timePart}`;
+      if (isYesterday) return `Yesterday, ${timePart}`;
+      const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${monthsEn[d.getMonth()]} ${d.getDate()}, ${timePart}`;
+    }
+  }
+  if (dateStr) {
+    return fmtDate(dateStr, lang || 'en');
+  }
+  return '—';
+}
+
 export function t(key: string, lang: string, params?: Record<string, any>): string {
   const dict = I18N[lang] || I18N.en;
   let str = dict[key] !== undefined ? dict[key] : (I18N.en[key] !== undefined ? I18N.en[key] : key);

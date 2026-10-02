@@ -609,6 +609,102 @@ svg { display: block; flex-shrink: 0; }
 .ri-cost b { font-size: 19px; color: var(--ink); }
 .ri-foot { margin-top: auto; padding-top: 6px; }
 
+/* Earned Records List (Latest 30 Points) */
+.earned-records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.earned-record-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-btn);
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.earned-record-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.earned-record-left {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+.earned-record-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pts-earn-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: 13.5px;
+  font-weight: 900;
+  border: 1.5px solid var(--ink);
+  background: #fef08a;
+  color: #854d0e;
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.earned-cat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid currentColor;
+}
+.earned-record-reason {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.earned-record-right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  text-align: right;
+}
+.earned-record-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  background: var(--paper);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-soft);
+}
+@media (max-width: 640px) {
+  .earned-record-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .earned-record-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 /* ---------- 5. Bottom Navigation Bar (~56px + safe-area) ---------- */
 .bottom-bar {
   flex: none;

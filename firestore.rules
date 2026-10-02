@@ -29,7 +29,7 @@ service cloud.firestore {
 
     // User Profile
     match /users/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId);
+      allow read: if isOwner(userId) && isValidId(userId);
       allow create: if isOwner(userId) && isValidId(userId)
                     && incoming().id == userId
                     && incoming().email is string;
@@ -40,7 +40,7 @@ service cloud.firestore {
 
     // User Workbench: stores all habits, tasks, goals, checkins, ledger, and rewards
     match /workbenches/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId);
+      allow read: if isOwner(userId) && isValidId(userId);
       allow create: if isOwner(userId) && isValidId(userId)
                     && incoming().ownerId == userId;
       allow update: if isOwner(userId) && isValidId(userId)
