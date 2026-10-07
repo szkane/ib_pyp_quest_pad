@@ -212,8 +212,10 @@ export default function App() {
     updateDB((draft) => {
       if (!draft.checkins[dt]) draft.checkins[dt] = {};
       if (!draft.checkins[dt][taskId]) draft.checkins[dt][taskId] = { steps: {}, used: {} };
-      const rec = draft.checkins[dt][taskId];
+      const rec = draft.checkins[dt][taskId] as any;
       rec.steps[stepId] = true;
+      rec.stepTimes = rec.stepTimes || {};
+      rec.stepTimes[stepId] = Date.now();
 
       if (draft.timer && draft.timer.taskId === taskId && draft.timer.stepId === stepId) {
         rec.used[stepId] = Math.max(1, Math.round((Date.now() - draft.timer.startTs) / 1000));
@@ -244,10 +246,11 @@ export default function App() {
     if (!task) return;
 
     updateDB((draft) => {
-      const rec = (draft.checkins[dt] || {})[taskId];
-      if (rec?.steps[stepId]) {
+      const rec = (draft.checkins[dt] || {})[taskId] as any;
+      if (rec?.steps?.[stepId]) {
         delete rec.steps[stepId];
         if (rec.used) delete rec.used[stepId];
+        if (rec.stepTimes) delete rec.stepTimes[stepId];
       }
       syncPointsIn(draft, dt, task);
     });
@@ -880,17 +883,17 @@ export default function App() {
               </div>
             </section>
 
-            {/* Latest 30 Earned Points Records */}
+            {/* Latest 30 Points & Adjustments Records */}
             {(() => {
-              const allEarned = [...db.ledger]
-                .filter((e) => e.delta > 0)
+              const allRecords = [...db.ledger]
+                .filter((e) => e.delta !== 0)
                 .sort((a, b) => {
                   const tsA = a.ts || (a.date ? new Date(a.date.replace(/-/g, '/')).getTime() : 0);
                   const tsB = b.ts || (b.date ? new Date(b.date.replace(/-/g, '/')).getTime() : 0);
                   return tsB - tsA;
                 });
 
-              const latest30 = allEarned.slice(0, 30);
+              const latest30 = allRecords.slice(0, 30);
               const filtered = goalsEarnedCat === 'all'
                 ? latest30
                 : latest30.filter((r) => r.catId === goalsEarnedCat);
@@ -903,17 +906,17 @@ export default function App() {
                     <div>
                       <h2>
                         <Icon name="star" size={22} color="var(--yellow)" />
-                        <span>{t('recent_earned_pts', lang)}</span>
+                        <span>{lang === 'zh' ? '积分明细与调整流水 (最新 30 条)' : 'Points History & Adjustments (Latest 30)'}</span>
                       </h2>
                       <div className="hint" style={{ marginTop: 2 }}>
-                        {t('recent_earned_pts_desc', lang)}
+                        {lang === 'zh' ? '记录任务打卡、家长特别调整与心愿消费明细' : 'Records task earnings, parent adjustments, and reward redemptions'}
                       </div>
                     </div>
                     {latest30.length > 0 && (
-                      <span className="pill green" style={{ fontWeight: 900 }}>
+                      <span className={`pill ${totalPts30 >= 0 ? 'green' : 'coral'}`} style={{ fontWeight: 900 }}>
                         {lang === 'zh'
-                          ? `最新 ${latest30.length} 条 · 共 +${totalPts30} 积分`
-                          : `Latest ${latest30.length} · +${totalPts30} pts`}
+                          ? `最新 ${latest30.length} 条 · 净值 ${totalPts30 >= 0 ? `+${totalPts30}` : totalPts30} 积分`
+                          : `Latest ${latest30.length} · Net ${totalPts30 >= 0 ? `+${totalPts30}` : totalPts30} pts`}
                       </span>
                     )}
                   </div>
@@ -981,6 +984,16 @@ export default function App() {
                         const name = catName(entry.catId);
                         const timeStr = fmtDateTime(entry.ts, entry.date, lang);
 
+                        const isToday = entry.date === today;
+                        const yesterdayDate = dateKey(new Date(Date.now() - 86400000));
+                        const isYesterday = entry.date === yesterdayDate;
+                        const timeClass = isToday ? 'today' : isYesterday ? 'yesterday' : '';
+
+                        const isAdjust = entry.kind === 'adjust';
+                        const isSpend = entry.kind === 'spend';
+                        const deltaSign = entry.delta > 0 ? `+${entry.delta}` : `${entry.delta}`;
+                        const deltaClass = entry.delta < 0 ? 'negative' : (isAdjust ? 'adjust-pos' : '');
+
                         return (
                           <div
                             key={entry.id || idx}
@@ -989,8 +1002,8 @@ export default function App() {
                           >
                             <div className="earned-record-left">
                               <div className="earned-record-badge">
-                                <span className="pts-earn-tag">
-                                  <span>+{entry.delta}</span>
+                                <span className={`pts-earn-tag ${deltaClass}`}>
+                                  <span>{deltaSign}</span>
                                   <span style={{ fontSize: 14 }}>{emoji}</span>
                                 </span>
                                 <span
@@ -1003,17 +1016,51 @@ export default function App() {
                                 >
                                   {name}
                                 </span>
+                                {isAdjust && (
+                                  <span
+                                    className="tag"
+                                    style={{
+                                      fontSize: 11,
+                                      padding: '1px 6px',
+                                      background: entry.delta > 0 ? '#dcfce7' : '#fee2e2',
+                                      color: entry.delta > 0 ? '#166534' : '#b91c1c',
+                                      borderColor: entry.delta > 0 ? '#16a34a' : '#ef4444',
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    {lang === 'zh' ? '家长调整' : 'Parent Adjust'}
+                                  </span>
+                                )}
+                                {isSpend && (
+                                  <span
+                                    className="tag"
+                                    style={{
+                                      fontSize: 11,
+                                      padding: '1px 6px',
+                                      background: '#fef3c7',
+                                      color: '#92400e',
+                                      borderColor: '#f59e0b',
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    {lang === 'zh' ? '心愿兑换' : 'Reward'}
+                                  </span>
+                                )}
                               </div>
                               <div className="earned-record-reason" title={entry.reason}>
-                                {entry.reason || (lang === 'zh' ? '自主探究打卡' : 'Quest step accomplished')}
+                                {entry.reason || (isAdjust ? (entry.delta > 0 ? (lang === 'zh' ? '家长特别奖励' : 'Parent Reward') : (lang === 'zh' ? '家长核减' : 'Parent Deduction')) : (lang === 'zh' ? '自主探究打卡' : 'Quest step accomplished'))}
                               </div>
                             </div>
                             <div className="earned-record-right">
                               <span
-                                className="earned-record-time"
+                                className={`earned-record-time ${timeClass}`}
                                 title={entry.ts ? new Date(entry.ts).toLocaleString() : entry.date}
                               >
-                                <Icon name="calendar" size={13} color="var(--muted)" />
+                                <Icon
+                                  name="calendar"
+                                  size={13}
+                                  color={isToday ? '#166534' : isYesterday ? '#854d0e' : 'var(--muted)'}
+                                />
                                 <span>{timeStr}</span>
                               </span>
                             </div>
@@ -1521,6 +1568,149 @@ export default function App() {
                       );
                     })}
                   </div>
+                </section>
+
+                <section className="card" style={{ marginTop: 14 }}>
+                  <div className="card-h">
+                    <div>
+                      <h2>
+                        <Icon name="coin" size={22} color="var(--yellow)" />
+                        <span>{lang === 'zh' ? '家长调整与积分流水记录' : 'Parent Adjustments & Points Ledger'}</span>
+                      </h2>
+                      <div className="hint" style={{ marginTop: 2 }}>
+                        {lang === 'zh' ? '记录家长手动调整与最近积分变更流水' : 'Recent manual adjustments and points transactions'}
+                      </div>
+                    </div>
+                    <button
+                      className="btn sm yellow"
+                      onClick={() => setModal({ type: 'adjustPoints' })}
+                    >
+                      {t('adjust_points', lang)}
+                    </button>
+                  </div>
+
+                  {(() => {
+                    const sortedLedger = [...db.ledger]
+                      .filter((e) => e.delta !== 0)
+                      .sort((a, b) => {
+                        const tsA = a.ts || (a.date ? new Date(a.date.replace(/-/g, '/')).getTime() : 0);
+                        const tsB = b.ts || (b.date ? new Date(b.date.replace(/-/g, '/')).getTime() : 0);
+                        return tsB - tsA;
+                      })
+                      .slice(0, 20);
+
+                    if (!sortedLedger.length) {
+                      return (
+                        <div className="empty">
+                          {lang === 'zh' ? '暂无积分变动记录' : 'No points adjustments recorded yet.'}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="earned-records-list">
+                        {sortedLedger.map((entry, idx) => {
+                          const color = catColor(entry.catId);
+                          const emoji = catPointEmoji(entry.catId);
+                          const name = catName(entry.catId);
+                          const timeStr = fmtDateTime(entry.ts, entry.date, lang);
+                          const isAdjust = entry.kind === 'adjust';
+                          const isSpend = entry.kind === 'spend';
+                          const deltaSign = entry.delta > 0 ? `+${entry.delta}` : `${entry.delta}`;
+                          const deltaClass = entry.delta < 0 ? 'negative' : isAdjust ? 'adjust-pos' : '';
+
+                          const isToday = entry.date === today;
+                          const yesterdayDate = dateKey(new Date(Date.now() - 86400000));
+                          const isYesterday = entry.date === yesterdayDate;
+                          const timeClass = isToday ? 'today' : isYesterday ? 'yesterday' : '';
+
+                          return (
+                            <div
+                              key={entry.id || idx}
+                              className="earned-record-item"
+                              style={{ borderLeft: `6px solid ${color}` }}
+                            >
+                              <div className="earned-record-left">
+                                <div className="earned-record-badge">
+                                  <span className={`pts-earn-tag ${deltaClass}`}>
+                                    <span>{deltaSign}</span>
+                                    <span style={{ fontSize: 14 }}>{emoji}</span>
+                                  </span>
+                                  <span
+                                    className="earned-cat-pill"
+                                    style={{
+                                      background: `${color}18`,
+                                      color,
+                                      borderColor: `${color}66`,
+                                    }}
+                                  >
+                                    {name}
+                                  </span>
+                                  {isAdjust && (
+                                    <span
+                                      className="tag"
+                                      style={{
+                                        fontSize: 11,
+                                        padding: '1px 6px',
+                                        background: entry.delta > 0 ? '#dcfce7' : '#fee2e2',
+                                        color: entry.delta > 0 ? '#166534' : '#b91c1c',
+                                        borderColor: entry.delta > 0 ? '#16a34a' : '#ef4444',
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {lang === 'zh' ? '家长调整' : 'Parent Adjust'}
+                                    </span>
+                                  )}
+                                  {isSpend && (
+                                    <span
+                                      className="tag"
+                                      style={{
+                                        fontSize: 11,
+                                        padding: '1px 6px',
+                                        background: '#fef3c7',
+                                        color: '#92400e',
+                                        borderColor: '#f59e0b',
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {lang === 'zh' ? '心愿兑换' : 'Reward'}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="earned-record-reason" title={entry.reason}>
+                                  {entry.reason ||
+                                    (isAdjust
+                                      ? entry.delta > 0
+                                        ? lang === 'zh'
+                                          ? '家长特别奖励'
+                                          : 'Parent Reward'
+                                        : lang === 'zh'
+                                        ? '家长核减'
+                                        : 'Parent Deduction'
+                                      : lang === 'zh'
+                                      ? '自主探究打卡'
+                                      : 'Quest step accomplished')}
+                                </div>
+                              </div>
+                              <div className="earned-record-right">
+                                <span
+                                  className={`earned-record-time ${timeClass}`}
+                                  title={entry.ts ? new Date(entry.ts).toLocaleString() : entry.date}
+                                >
+                                  <Icon
+                                    name="calendar"
+                                    size={13}
+                                    color={isToday ? '#166534' : isYesterday ? '#854d0e' : 'var(--muted)'}
+                                  />
+                                  <span>{timeStr}</span>
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </section>
               </>
             )}

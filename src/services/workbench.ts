@@ -95,10 +95,26 @@ export function syncPointsIn(d: QuestPadDB, date: string, task: TaskDef): void {
       ex.delta = w.delta;
       ex.reason = w.reason;
       ex.catId = task.categoryId;
+      if (!ex.ts || (ex.date && dateKey(new Date(ex.ts)) !== ex.date)) {
+        const [y, m, day] = date.split('-').map(Number);
+        ex.ts = new Date(y, m - 1, day, 9, 30, 0).getTime();
+      }
     } else {
+      let ts = Date.now();
+      const todayStr = dateKey();
+      const stepId = id.split('|')[2];
+      const explicitTime = (rec as any)?.stepTimes?.[stepId];
+      if (explicitTime && typeof explicitTime === 'number') {
+        ts = explicitTime;
+      } else if (date !== todayStr) {
+        const [y, m, day] = date.split('-').map(Number);
+        const pseudoMin = (id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 50) + 5;
+        const pseudoHour = 9 + (id.charCodeAt(0) % 8);
+        ts = new Date(y, m - 1, day, pseudoHour, pseudoMin, 0).getTime();
+      }
       d.ledger.push({
         id,
-        ts: Date.now(),
+        ts,
         date,
         catId: task.categoryId,
         delta: w.delta,
@@ -287,6 +303,25 @@ export function reconcileWorkbenchData(d: QuestPadDB): QuestPadDB {
       seenIds.add(entry.id);
     }
     return true;
+  });
+
+  // 4. Ensure realistic, distinct timestamps matching each entry's calendar date
+  const dateCounts: Record<string, number> = {};
+  d.ledger.forEach((e) => {
+    if (!e.date) return;
+    dateCounts[e.date] = (dateCounts[e.date] || 0) + 1;
+    const order = dateCounts[e.date];
+
+    // If e.ts is missing or dateKey(new Date(e.ts)) doesn't match e.date:
+    if (!e.ts || dateKey(new Date(e.ts)) !== e.date) {
+      const [y, m, day] = e.date.split('-').map(Number);
+      // Create a natural time distribution: e.g. 8:30 + order * 25 minutes
+      const totalMinutes = 8 * 60 + 30 + order * 25;
+      const h = Math.min(21, Math.floor(totalMinutes / 60));
+      const min = totalMinutes % 60;
+      const targetDate = new Date(y, m - 1, day, h, min, (order * 13) % 60);
+      e.ts = targetDate.getTime();
+    }
   });
 
   return d;

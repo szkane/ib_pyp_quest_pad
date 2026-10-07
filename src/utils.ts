@@ -60,8 +60,20 @@ export function fmtDur(sec: number | null | undefined): string {
 }
 
 export function fmtDateTime(ts?: number, dateStr?: string, lang?: string): string {
+  let d: Date | null = null;
   if (ts && !isNaN(ts) && ts > 0) {
-    const d = new Date(ts);
+    d = new Date(ts);
+    // If dateStr is provided and doesn't match the ts calendar date (e.g. batch created today on historical date), align calendar date!
+    if (dateStr && dateKey(d) !== dateStr) {
+      const [y, m, day] = dateStr.split('-').map(Number);
+      d = new Date(y, m - 1, day, d.getHours(), d.getMinutes(), d.getSeconds());
+    }
+  } else if (dateStr) {
+    const [y, m, day] = dateStr.split('-').map(Number);
+    d = new Date(y, m - 1, day, 12, 0, 0);
+  }
+
+  if (d) {
     const hours = pad2(d.getHours());
     const mins = pad2(d.getMinutes());
     const timePart = `${hours}:${mins}`;
@@ -81,9 +93,6 @@ export function fmtDateTime(ts?: number, dateStr?: string, lang?: string): strin
       const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       return `${monthsEn[d.getMonth()]} ${d.getDate()}, ${timePart}`;
     }
-  }
-  if (dateStr) {
-    return fmtDate(dateStr, lang || 'en');
   }
   return '—';
 }
