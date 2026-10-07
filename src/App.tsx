@@ -513,7 +513,7 @@ export default function App() {
                   return (
                     <article
                       key={task.id}
-                      className={`task-hero-card ${complete ? 'done' : ''}`}
+                      className={`task-hero-card ${complete ? 'done complete' : ''}`}
                       style={{ '--c': color } as React.CSSProperties}
                     >
                       <div className="th-header">
