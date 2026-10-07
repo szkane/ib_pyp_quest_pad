@@ -609,6 +609,45 @@ svg { display: block; flex-shrink: 0; }
 .ri-cost b { font-size: 19px; color: var(--ink); }
 .ri-foot { margin-top: auto; padding-top: 6px; }
 
+/* Category Vault Showcase */
+.cat-vault-section {
+  margin-bottom: 20px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--r-card);
+  padding: 16px;
+  box-shadow: var(--shadow-block-sm);
+}
+.cat-vault-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cat-vault-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--ink);
+}
+.cat-vault-balance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-pill);
+  padding: 3px 12px;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
 /* Earned Records List (Latest 30 Points) */
 .earned-records-list {
   display: flex;

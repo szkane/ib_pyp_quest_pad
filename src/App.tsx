@@ -51,6 +51,8 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<string>('cat_study');
   const [parentUnlocked, setParentUnlocked] = useState(false);
   const [redeemTier, setRedeemTier] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [parentRewardCat, setParentRewardCat] = useState<string>('all');
+  const [parentRewardTier, setParentRewardTier] = useState<string>('all');
   const [goalsEarnedCat, setGoalsEarnedCat] = useState<string>('all');
   const [goalSelectedMonth, setGoalSelectedMonth] = useState<string>(() => monthKey(dateKey()));
   const [showAllMonthGoals, setShowAllMonthGoals] = useState<boolean>(false);
@@ -1770,10 +1772,17 @@ export default function App() {
 
                 <section className="card">
                   <div className="card-h">
-                    <h2>
-                      <Icon name="gift" size={22} color="var(--coral)" />
-                      <span>{t('celebration_vault', lang)}</span>
-                    </h2>
+                    <div>
+                      <h2>
+                        <Icon name="gift" size={22} color="var(--coral)" />
+                        <span>{t('celebration_vault', lang)}</span>
+                      </h2>
+                      <div className="hint" style={{ marginTop: 2 }}>
+                        {lang === 'zh'
+                          ? '按分类与档位管理心愿奖励项目'
+                          : 'Manage reward items by category and tier'}
+                      </div>
+                    </div>
                     <button
                       className="btn sm green"
                       onClick={() => {
@@ -1781,10 +1790,10 @@ export default function App() {
                           type: 'redeem',
                           draft: {
                             id: '',
-                            tier: redeemTier,
+                            tier: parentRewardTier === 'all' ? 'daily' : parentRewardTier,
                             name: '',
                             cost: 25,
-                            catId: 'cat_study',
+                            catId: parentRewardCat === 'all' ? 'cat_study' : parentRewardCat,
                             limit: 1,
                             desc: '',
                           },
@@ -1795,51 +1804,189 @@ export default function App() {
                       <span>{t('add_new_reward', lang)}</span>
                     </button>
                   </div>
-                  <div className="rows">
-                    {(db.redeems[redeemTier] || []).map((it) => (
-                      <div key={it.id} className="row">
-                        <div className="row-main">
-                          <div className="row-title">
-                            <span>{it.name}</span>
-                            <span className="tag pts-badge">
-                              {it.cost} {catPointEmoji(it.catId)}
+
+                  {(() => {
+                    const allRewardsList = [
+                      ...(db.redeems.daily || []).map((r) => ({ ...r, tier: 'daily' as const })),
+                      ...(db.redeems.weekly || []).map((r) => ({ ...r, tier: 'weekly' as const })),
+                      ...(db.redeems.monthly || []).map((r) => ({ ...r, tier: 'monthly' as const })),
+                    ];
+
+                    const filteredRewards = allRewardsList.filter((it) => {
+                      if (parentRewardCat !== 'all' && it.catId !== parentRewardCat) return false;
+                      if (parentRewardTier !== 'all' && it.tier !== parentRewardTier) return false;
+                      return true;
+                    });
+
+                    return (
+                      <>
+                        {/* Category Tabs: Show All and Each Category */}
+                        <div className="parent-task-tabs" style={{ marginBottom: 16 }}>
+                          <button
+                            className={`parent-cat-tab ${parentRewardCat === 'all' ? 'active' : ''}`}
+                            onClick={() => setParentRewardCat('all')}
+                          >
+                            <Icon name="grid" size={15} color={parentRewardCat === 'all' ? '#fff' : 'var(--ink)'} />
+                            <span>{lang === 'zh' ? '全部分类' : 'All Categories'}</span>
+                            <span className="cnt-badge">{allRewardsList.length}</span>
+                          </button>
+                          {db.categories.map((c) => {
+                            const isCur = parentRewardCat === c.id;
+                            const cRewardCount = allRewardsList.filter((r) => r.catId === c.id).length;
+                            return (
+                              <button
+                                key={c.id}
+                                className={`parent-cat-tab ${isCur ? 'active' : ''}`}
+                                style={{ '--tab-c': c.color } as React.CSSProperties}
+                                onClick={() => setParentRewardCat(c.id)}
+                              >
+                                <Icon name={c.icon || 'gift'} size={15} color={isCur ? '#fff' : c.color} />
+                                <span>{catName(c.id)}</span>
+                                <span className="cnt-badge">{cRewardCount}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Tier Filters & Reward Counter */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 8,
+                            marginBottom: 12,
+                            paddingBottom: 6,
+                            borderBottom: '1.5px solid #e2e8f0',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 900,
+                              fontSize: 14.5,
+                              color: 'var(--ink)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
+                          >
+                            <Icon name="gift" size={17} color="var(--coral)" />
+                            <span>
+                              {lang === 'zh' ? '心愿奖励列表' : 'Rewards List'} ({filteredRewards.length})
                             </span>
                           </div>
-                          <div className="row-sub">{catName(it.catId)}</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {(['all', 'daily', 'weekly', 'monthly'] as const).map((tId) => (
+                              <button
+                                key={tId}
+                                className={`tag ${parentRewardTier === tId ? 'active' : ''}`}
+                                style={{
+                                  cursor: 'pointer',
+                                  padding: '3px 10px',
+                                  borderRadius: 'var(--r-pill)',
+                                  background: parentRewardTier === tId ? 'var(--ink)' : 'var(--paper)',
+                                  color: parentRewardTier === tId ? '#fff' : 'var(--ink)',
+                                  border: '1.5px solid var(--ink)',
+                                  fontWeight: 800,
+                                  fontSize: 12,
+                                  boxShadow: parentRewardTier === tId ? '1px 1px 0 var(--ink)' : 'none',
+                                }}
+                                onClick={() => setParentRewardTier(tId)}
+                              >
+                                {tId === 'all'
+                                  ? lang === 'zh'
+                                    ? '全部档位'
+                                    : 'All Tiers'
+                                  : t(`${tId}_tier`, lang)}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="row-acts">
-                          <button
-                            className="btn sm soft"
-                            onClick={() => {
-                              setModal({
-                                type: 'redeem',
-                                draft: JSON.parse(JSON.stringify(it)),
-                              });
-                            }}
-                          >
-                            <Icon name="edit" size={16} />
-                            <span>{lang === 'zh' ? '编辑' : 'Edit'}</span>
-                          </button>
-                          <button
-                            className="icon-btn danger"
-                            onClick={() => {
-                              setModal({
-                                type: 'confirm',
-                                title: t('del_reward_confirm', lang),
-                                text: t('del_reward_confirm', lang),
-                                danger: true,
-                                action: 'rdDel',
-                                targetId: it.id,
-                                targetTier: redeemTier,
-                              });
-                            }}
-                          >
-                            <Icon name="trash" size={16} color="var(--coral)" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+
+                        {!filteredRewards.length ? (
+                          <div className="empty" style={{ margin: '14px 0' }}>
+                            {lang === 'zh'
+                              ? '当前分类与档位下暂无心愿奖励。点击上方 "+ 新增心愿" 添加！'
+                              : 'No rewards in this category or tier yet. Click "+ Add Reward" to create one!'}
+                          </div>
+                        ) : (
+                          <div className="rows">
+                            {filteredRewards.map((it) => {
+                              const col = catColor(it.catId);
+                              return (
+                                <div key={it.id} className="row" style={{ borderLeft: `5px solid ${col}` }}>
+                                  <div className="row-main">
+                                    <div className="row-title">
+                                      <span>{it.name}</span>
+                                      <span
+                                        className="tag"
+                                        style={{
+                                          background: `${col}22`,
+                                          color: col,
+                                          fontWeight: 900,
+                                          fontSize: 11,
+                                          padding: '1px 6px',
+                                          border: `1px solid ${col}66`,
+                                        }}
+                                      >
+                                        {catName(it.catId)}
+                                      </span>
+                                      <span
+                                        className="tag"
+                                        style={{
+                                          fontSize: 11,
+                                          fontWeight: 800,
+                                          padding: '1px 6px',
+                                          background: '#f1f5f9',
+                                        }}
+                                      >
+                                        {t(`${it.tier}_tier`, lang)}
+                                      </span>
+                                      <span className="tag pts-badge">
+                                        {it.cost} {catPointEmoji(it.catId)}
+                                      </span>
+                                    </div>
+                                    {it.desc && <div className="row-sub">{it.desc}</div>}
+                                  </div>
+                                  <div className="row-acts">
+                                    <button
+                                      className="btn sm soft"
+                                      onClick={() => {
+                                        setModal({
+                                          type: 'redeem',
+                                          draft: JSON.parse(JSON.stringify(it)),
+                                        });
+                                      }}
+                                    >
+                                      <Icon name="edit" size={16} />
+                                      <span>{lang === 'zh' ? '编辑' : 'Edit'}</span>
+                                    </button>
+                                    <button
+                                      className="icon-btn danger"
+                                      onClick={() => {
+                                        setModal({
+                                          type: 'confirm',
+                                          title: t('del_reward_confirm', lang),
+                                          text: t('del_reward_confirm', lang),
+                                          danger: true,
+                                          action: 'rdDel',
+                                          targetId: it.id,
+                                          targetTier: it.tier,
+                                        });
+                                      }}
+                                    >
+                                      <Icon name="trash" size={16} color="var(--coral)" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </section>
               </>
             )}
@@ -2061,6 +2208,20 @@ export default function App() {
               }
             });
             showToast(t('deleted_toast', lang));
+          } else if (m.action === 'delRedemption') {
+            updateDB((draft) => {
+              const idx = draft.redemptions.findIndex((r) => r.id === m.targetId);
+              if (idx >= 0) {
+                const r = draft.redemptions[idx];
+                if (r.status === 'approved') {
+                  draft.ledger = draft.ledger.filter(
+                    (e) => e.id !== 'spend|' + r.id && (e as any).redemptionId !== r.id
+                  );
+                }
+                draft.redemptions.splice(idx, 1);
+              }
+            });
+            showToast(lang === 'zh' ? '兑换记录已删除' : 'Record deleted');
           } else if (m.action === 'resetDemo') {
             const currentName = db.settings.childName && db.settings.childName !== 'Hilson' ? db.settings.childName : 'IB Learner';
             const fresh = seedDemo(currentName, currentUser.uid);
