@@ -252,6 +252,13 @@ export function reconcileWorkbenchData(d: QuestPadDB): QuestPadDB {
   if (!d.tasks) d.tasks = [];
   if (!d.redemptions) d.redemptions = [];
   if (!d.categories) d.categories = CAT_DEFS.map((c) => ({ ...c }));
+  if (!d.redeems) {
+    d.redeems = { daily: [], weekly: [], monthly: [] };
+  } else {
+    if (!Array.isArray(d.redeems.daily)) d.redeems.daily = [];
+    if (!Array.isArray(d.redeems.weekly)) d.redeems.weekly = [];
+    if (!Array.isArray(d.redeems.monthly)) d.redeems.monthly = [];
+  }
 
   // 1. Re-sync all task check-ins into ledger
   const checkinDates = Object.keys(d.checkins);
@@ -330,11 +337,15 @@ export function reconcileWorkbenchData(d: QuestPadDB): QuestPadDB {
 export async function saveWorkbenchToFirestore(userId: string, data: QuestPadDB): Promise<void> {
   const path = `workbenches/${userId}`;
   try {
-    const payload = {
+    const rawPayload = {
       ...data,
       ownerId: userId,
       updatedAt: new Date().toISOString()
     };
+    // Strip any undefined values to avoid Firestore serialization errors
+    const payload = JSON.parse(
+      JSON.stringify(rawPayload, (_key, value) => (value === undefined ? null : value))
+    );
     await setDoc(doc(db, 'workbenches', userId), payload);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

@@ -34,7 +34,7 @@ service cloud.firestore {
                     && incoming().id == userId
                     && incoming().email is string;
       allow update: if isOwner(userId) && isValidId(userId)
-                    && incoming().id == existing().id;
+                    && incoming().id == userId;
       allow delete: if isOwner(userId) && isValidId(userId);
     }
 
@@ -44,7 +44,7 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidId(userId)
                     && incoming().ownerId == userId;
       allow update: if isOwner(userId) && isValidId(userId)
-                    && incoming().ownerId == existing().ownerId;
+                    && incoming().ownerId == userId;
       allow delete: if isOwner(userId) && isValidId(userId);
     }
   }

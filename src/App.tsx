@@ -57,6 +57,7 @@ export default function App() {
   const [goalSelectedMonth, setGoalSelectedMonth] = useState<string>(() => monthKey(dateKey()));
   const [showAllMonthGoals, setShowAllMonthGoals] = useState<boolean>(false);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error'>('synced');
 
   // Database state
   const [db, setDb] = useState<QuestPadDB>(() => seedDemo('IB Learner'));
@@ -122,15 +123,22 @@ export default function App() {
 
   // Helper mutations with automatic Firestore save
   const updateDB = async (updater: (draft: QuestPadDB) => void) => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      showToast(lang === 'zh' ? '未登录，无法保存到云端' : 'Not signed in, changes cannot sync', 'bad');
+      return;
+    }
     const cloned: QuestPadDB = JSON.parse(JSON.stringify(db));
     updater(cloned);
     setDb(cloned);
+    setSyncStatus('saving');
     try {
       await saveWorkbenchToFirestore(currentUser.uid, cloned);
+      setSyncStatus('synced');
     } catch (err: any) {
+      setSyncStatus('error');
       console.error('Failed to save to Firestore:', err);
-      showToast(err.message || 'Sync error', 'bad');
+      showToast(err.message || (lang === 'zh' ? '云端同步失败' : 'Sync error'), 'bad');
+      throw err;
     }
   };
 
@@ -403,6 +411,63 @@ export default function App() {
         </div>
 
         <div className="topbar-right">
+          {/* Cloud Sync Status Indicator */}
+          <div
+            className="sync-badge"
+            title={
+              syncStatus === 'saving'
+                ? lang === 'zh'
+                  ? '正在同步到云端...'
+                  : 'Saving to cloud...'
+                : syncStatus === 'error'
+                ? lang === 'zh'
+                  ? '云端同步异常'
+                  : 'Cloud sync error'
+                : lang === 'zh'
+                ? '云端数据已同步'
+                : 'Synced to cloud'
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 11.5,
+              fontWeight: 800,
+              padding: '3px 8px',
+              borderRadius: 'var(--r-pill)',
+              border: '1.5px solid var(--ink)',
+              background:
+                syncStatus === 'error'
+                  ? '#fee2e2'
+                  : syncStatus === 'saving'
+                  ? '#fef3c7'
+                  : '#dcfce7',
+              color:
+                syncStatus === 'error'
+                  ? '#991b1b'
+                  : syncStatus === 'saving'
+                  ? '#92400e'
+                  : '#166534',
+            }}
+          >
+            <span style={{ fontSize: 12 }}>
+              {syncStatus === 'saving' ? '⏳' : syncStatus === 'error' ? '⚠️' : '☁️'}
+            </span>
+            <span>
+              {syncStatus === 'saving'
+                ? lang === 'zh'
+                  ? '保存中'
+                  : 'Saving'
+                : syncStatus === 'error'
+                ? lang === 'zh'
+                  ? '同步失败'
+                  : 'Sync Error'
+                : lang === 'zh'
+                ? '已同步'
+                : 'Synced'}
+            </span>
+          </div>
+
           {activeNav === 'parent' && parentUnlocked && (
             <button
               className="lock-btn"
@@ -2241,60 +2306,81 @@ export default function App() {
             showToast(lang === 'zh' ? '数据导入并重新校准积分成功！' : 'Data restored & scores calibrated!', 'good');
           }
         }}
-        onSaveTask={(draft) => {
+        onSaveTask={async (draft) => {
           if (!draft.title) {
             showToast(lang === 'zh' ? '请输入任务名称' : 'Please enter quest title', 'bad');
             return;
           }
-          updateDB((d) => {
-            const existingIdx = d.tasks.findIndex((t) => t.id === draft.id);
-            if (existingIdx >= 0) {
-              d.tasks[existingIdx] = draft;
-            } else {
-              draft.id = 'task_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-              draft.createdAt = Date.now();
-              draft.active = true;
-              d.tasks.push(draft);
-            }
-          });
-          setModal(null);
-          showToast(t('saved_toast', lang), 'good');
+          try {
+            await updateDB((d) => {
+              if (!d.tasks) d.tasks = [];
+              const existingIdx = d.tasks.findIndex((t) => t.id === draft.id);
+              if (existingIdx >= 0) {
+                d.tasks[existingIdx] = draft;
+              } else {
+                draft.id = 'task_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                draft.createdAt = Date.now();
+                draft.active = true;
+                d.tasks.push(draft);
+              }
+            });
+            setModal(null);
+            showToast(t('saved_toast', lang), 'good');
+          } catch (err) {
+            showToast(lang === 'zh' ? '云端保存失败，请检查网络后重试' : 'Failed to save to cloud', 'bad');
+          }
         }}
-        onSaveGoal={(draft) => {
+        onSaveGoal={async (draft) => {
           if (!draft.title) {
             showToast(lang === 'zh' ? '请输入目标名称' : 'Please enter goal title', 'bad');
             return;
           }
-          updateDB((d) => {
-            const existingIdx = d.goals.findIndex((g) => g.id === draft.id);
-            if (existingIdx >= 0) {
-              d.goals[existingIdx] = draft;
-            } else {
-              draft.id = 'goal_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-              draft.createdAt = Date.now();
-              d.goals.push(draft);
-            }
-          });
-          setModal(null);
-          showToast(t('saved_toast', lang), 'good');
+          try {
+            await updateDB((d) => {
+              if (!d.goals) d.goals = [];
+              const existingIdx = d.goals.findIndex((g) => g.id === draft.id);
+              if (existingIdx >= 0) {
+                d.goals[existingIdx] = draft;
+              } else {
+                draft.id = 'goal_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                draft.createdAt = Date.now();
+                d.goals.push(draft);
+              }
+            });
+            setModal(null);
+            showToast(t('saved_toast', lang), 'good');
+          } catch (err) {
+            showToast(lang === 'zh' ? '云端保存失败，请检查网络后重试' : 'Failed to save to cloud', 'bad');
+          }
         }}
-        onSaveReward={(draft) => {
+        onSaveReward={async (draft) => {
           if (!draft.name) {
             showToast(lang === 'zh' ? '请输入心愿名称' : 'Please enter reward name', 'bad');
             return;
           }
-          updateDB((d) => {
-            const tierList = d.redeems[draft.tier as 'daily' | 'weekly' | 'monthly'];
-            const existingIdx = tierList.findIndex((r) => r.id === draft.id);
-            if (existingIdx >= 0) {
-              tierList[existingIdx] = draft;
-            } else {
-              draft.id = 'rd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-              tierList.push(draft);
-            }
-          });
-          setModal(null);
-          showToast(t('saved_toast', lang), 'good');
+          try {
+            await updateDB((d) => {
+              if (!d.redeems) {
+                d.redeems = { daily: [], weekly: [], monthly: [] };
+              }
+              const tier = (draft.tier as 'daily' | 'weekly' | 'monthly') || 'daily';
+              if (!Array.isArray(d.redeems[tier])) {
+                d.redeems[tier] = [];
+              }
+              const tierList = d.redeems[tier];
+              const existingIdx = tierList.findIndex((r) => r.id === draft.id);
+              if (existingIdx >= 0) {
+                tierList[existingIdx] = { ...draft, tier };
+              } else {
+                draft.id = 'rd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                tierList.push({ ...draft, tier });
+              }
+            });
+            setModal(null);
+            showToast(t('saved_toast', lang), 'good');
+          } catch (err) {
+            showToast(lang === 'zh' ? '云端保存失败，请检查网络后重试' : 'Failed to save to cloud', 'bad');
+          }
         }}
         onSaveCat={(catId, pts) => {
           updateDB((d) => {
