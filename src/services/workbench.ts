@@ -18,7 +18,7 @@ export function blankDB(childName = 'IB Learner', ownerId?: string): QuestPadDB 
     createdAt: Date.now(),
     ownerId,
     settings: {
-      childName: childName && childName !== 'Hilson' ? childName : 'IB Learner',
+      childName: childName || 'IB Learner',
       parentPin: '1234',
       stepMode: 'perStep'
     },
@@ -127,7 +127,7 @@ export function syncPointsIn(d: QuestPadDB, date: string, task: TaskDef): void {
 }
 
 export function seedDemo(childName = 'IB Learner', ownerId?: string): QuestPadDB {
-  const cleanName = childName && childName !== 'Hilson' ? childName : 'IB Learner';
+  const cleanName = childName || 'IB Learner';
   const d = blankDB(cleanName, ownerId);
   const today = dateKey();
   const mk = monthKey(today);
@@ -259,6 +259,13 @@ export function reconcileWorkbenchData(d: QuestPadDB): QuestPadDB {
     if (!Array.isArray(d.redeems.weekly)) d.redeems.weekly = [];
     if (!Array.isArray(d.redeems.monthly)) d.redeems.monthly = [];
   }
+  if (!d.settings) {
+    d.settings = { childName: 'IB Learner', parentPin: '1234', stepMode: 'perStep' };
+  } else {
+    if (!d.settings.childName) d.settings.childName = 'IB Learner';
+    if (!d.settings.parentPin) d.settings.parentPin = '1234';
+    if (!d.settings.stepMode) d.settings.stepMode = 'perStep';
+  }
 
   // 1. Re-sync all task check-ins into ledger
   const checkinDates = Object.keys(d.checkins);
@@ -363,9 +370,6 @@ export function subscribeToWorkbench(
     async (snapshot) => {
       if (snapshot.exists()) {
         const raw = snapshot.data() as QuestPadDB;
-        if (raw.settings && raw.settings.childName === 'Hilson') {
-          raw.settings.childName = 'IB Learner';
-        }
         const reconciled = reconcileWorkbenchData(raw);
         onData(reconciled);
       } else {

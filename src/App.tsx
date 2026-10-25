@@ -38,6 +38,8 @@ import { AuthScreen } from './components/AuthScreen';
 import { Modals } from './components/Modals';
 import { Celebration } from './components/Celebration';
 import { FocusTimer } from './components/FocusTimer';
+import { ParentDashboard } from './components/ParentDashboard';
+import { getYesterday, getShiftedDate } from './utils/dashboard';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -45,8 +47,9 @@ export default function App() {
   const [lang, setLang] = useState<string>(() => localStorage.getItem(LS_LANG_KEY) || 'en');
 
   // Application navigation
-  const [activeNav, setActiveNav] = useState<'tasks' | 'goals' | 'rewards' | 'parent'>('tasks');
-  const [parentTab, setParentTab] = useState<'tasks' | 'goals' | 'points' | 'rewards' | 'settings'>('tasks');
+  const [activeNav, setActiveNav] = useState<'tasks' | 'history' | 'goals' | 'rewards' | 'parent'>('tasks');
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>(() => getYesterday());
+  const [parentTab, setParentTab] = useState<'dashboard' | 'tasks' | 'goals' | 'points' | 'rewards' | 'settings'>('dashboard');
   const [parentTaskCat, setParentTaskCat] = useState<string>('all');
   const [activeCategory, setActiveCategory] = useState<string>('cat_study');
   const [parentUnlocked, setParentUnlocked] = useState(false);
@@ -61,11 +64,19 @@ export default function App() {
 
   // Database state
   const [db, setDb] = useState<QuestPadDB>(() => seedDemo('IB Learner'));
+  const [childNameInput, setChildNameInput] = useState<string>(() => db.settings?.childName || 'IB Learner');
   const [modal, setModal] = useState<any>(null);
   const [toastMsg, setToastMsg] = useState<{ text: string; kind?: 'good' | 'bad' } | null>(null);
   const [celebrationData, setCelebrationData] = useState<{ task: any; phrase: string; emoji: string; pts: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync childNameInput whenever db.settings.childName updates from Firestore
+  useEffect(() => {
+    if (db.settings?.childName) {
+      setChildNameInput(db.settings.childName);
+    }
+  }, [db.settings?.childName]);
 
   // Listen for Firebase Auth state changes
   useEffect(() => {
@@ -144,6 +155,7 @@ export default function App() {
 
   // Queries
   const today = dateKey();
+  const currentActiveDate = activeNav === 'history' ? selectedHistoryDate : today;
   const currentMonth = monthKey(today);
 
   const catById = (id: string) => db.categories.find((c) => c.id === id) || db.categories[0];
@@ -175,6 +187,26 @@ export default function App() {
       reconcileWorkbenchData(draft);
     });
     showToast(lang === 'zh' ? '积分已重新核算与校准！' : 'Scores recalculated & calibrated!', 'good');
+  };
+
+  const handleSaveChildName = async () => {
+    const val = childNameInput.trim();
+    if (!val) {
+      showToast(lang === 'zh' ? '请输入孩子姓名' : "Please enter child's name", 'bad');
+      return;
+    }
+    try {
+      await updateDB((draft) => {
+        if (!draft.settings) {
+          draft.settings = { childName: val, parentPin: '1234', stepMode: 'perStep' };
+        } else {
+          draft.settings.childName = val;
+        }
+      });
+      showToast(t('saved_toast', lang), 'good');
+    } catch (err) {
+      showToast(lang === 'zh' ? '保存失败，请检查网络后重试' : 'Failed to save child name', 'bad');
+    }
   };
 
   const catEarnOn = (catId: string, dt: string) => {
@@ -401,7 +433,11 @@ export default function App() {
         <div className="topbar-left">
           <div className="brand-title">
             <span className="brand-name">
-              IB PYP Quest Pad
+              {db.settings?.childName && db.settings.childName !== 'IB Learner'
+                ? lang === 'zh'
+                  ? `${db.settings.childName} 的打卡台`
+                  : `${db.settings.childName}'s Quest Pad`
+                : 'IB PYP Quest Pad'}
             </span>
             <span className="badge-date">
               <Icon name="calendar" size={14} color="var(--ink)" />
@@ -482,13 +518,22 @@ export default function App() {
             </button>
           )}
 
-          <div className="user-badge" title={currentUser.email || ''}>
+          <div
+            className="user-badge"
+            title={currentUser.isAnonymous ? t('guest_session_notice', lang) : (currentUser.email || '')}
+          >
             {currentUser.photoURL ? (
               <img src={currentUser.photoURL} alt="User avatar" />
+            ) : currentUser.isAnonymous ? (
+              <span style={{ fontSize: 14 }}>🚀</span>
             ) : (
               <span style={{ fontSize: 13 }}>👤</span>
             )}
-            <span>{currentUser.displayName || currentUser.email?.split('@')[0]}</span>
+            <span>
+              {currentUser.isAnonymous
+                ? t('guest_user_label', lang)
+                : currentUser.displayName || currentUser.email?.split('@')[0] || 'Learner'}
+            </span>
           </div>
 
           <button
@@ -517,12 +562,94 @@ export default function App() {
       </header>
 
       {/* 2. Category Bar (Shown in Tasks Mode) */}
-      {activeNav === 'tasks' && (
+      {/* 2. Historical Date Stepper Bar & Read-only Alert (Shown in History Mode) */}
+      {activeNav === 'history' && (
+        <>
+          <div className="history-stepper-bar">
+            <div className="history-stepper-controls">
+              <button
+                className="btn xs soft"
+                onClick={() => setSelectedHistoryDate((prev) => getShiftedDate(prev, -1))}
+                title={t('history_prev_day', lang)}
+              >
+                ◀ {t('history_prev_day', lang)}
+              </button>
+
+              <div className="history-date-display">
+                <Icon name="calendar" size={15} color="var(--blue)" />
+                <span>{fmtDate(selectedHistoryDate, lang)}</span>
+                {selectedHistoryDate === getYesterday(today) && (
+                  <span className="pill amber" style={{ fontSize: 11, padding: '1px 6px', height: 20 }}>
+                    {lang === 'zh' ? '昨天' : 'Yesterday'}
+                  </span>
+                )}
+                {selectedHistoryDate === today && (
+                  <span className="pill green" style={{ fontSize: 11, padding: '1px 6px', height: 20 }}>
+                    {lang === 'zh' ? '今天' : 'Today'}
+                  </span>
+                )}
+              </div>
+
+              <div className="history-calendar-picker-wrap">
+                <button className="btn xs soft" title={t('history_select_date', lang)}>
+                  📅 {t('history_select_date', lang)}
+                </button>
+                <input
+                  type="date"
+                  className="history-hidden-date-input"
+                  max={today}
+                  value={selectedHistoryDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedHistoryDate(e.target.value);
+                    }
+                  }}
+                />
+              </div>
+
+              <button
+                className="btn xs soft"
+                disabled={selectedHistoryDate >= today}
+                onClick={() => setSelectedHistoryDate((prev) => getShiftedDate(prev, 1))}
+                title={t('history_next_day', lang)}
+              >
+                {t('history_next_day', lang)} ▶
+              </button>
+            </div>
+
+            {selectedHistoryDate !== today && (
+              <button
+                className="btn xs line"
+                onClick={() => {
+                  setActiveNav('tasks');
+                }}
+              >
+                {t('history_back_today', lang)}
+              </button>
+            )}
+          </div>
+
+          {selectedHistoryDate < today && (
+            <div className="readonly-badge-banner">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>📜</span>
+                <span>{t('history_readonly_notice', lang, { date: fmtDate(selectedHistoryDate, lang) })}</span>
+              </div>
+              <span className="pill amber" style={{ fontSize: 11, padding: '2px 8px', fontWeight: 900 }}>
+                🔒 {lang === 'zh' ? '只读历史' : 'Read-Only Mode'}
+              </span>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 2. Category Bar (Shown in Tasks & History Mode) */}
+      {(activeNav === 'tasks' || activeNav === 'history') && (
         <nav className="category-bar">
           {db.categories.map((c) => {
             const isCur = activeCategory === c.id;
-            const tasks = tasksOfCategory(c.id, today);
-            const done = tasks.filter((t) => isTaskComplete(today, t, db)).length;
+            const tasks = tasksOfCategory(c.id, currentActiveDate);
+            const done = tasks.filter((t) => isTaskComplete(currentActiveDate, t, db)).length;
             return (
               <button
                 key={c.id}
@@ -542,10 +669,12 @@ export default function App() {
       )}
 
       {/* 3. Main Viewports */}
-      {activeNav === 'tasks' && (
+      {(activeNav === 'tasks' || activeNav === 'history') && (
         <div className="app-viewport">
           {(() => {
-            const tasks = tasksOfCategory(activeCategory, today);
+            const tasks = tasksOfCategory(activeCategory, currentActiveDate);
+            const isReadOnly = activeNav === 'history' && currentActiveDate < today;
+
             if (!tasks.length) {
               return (
                 <div className="card-empty-state">
@@ -562,9 +691,9 @@ export default function App() {
                 {tasks.map((task) => {
                   const color = catColor(task.categoryId);
                   const total = task.steps.length;
-                  const done = doneStepCount(today, task);
-                  const complete = isTaskComplete(today, task, db);
-                  const rec = (db.checkins[today] || {})[task.id] || { steps: {}, used: {} };
+                  const done = doneStepCount(currentActiveDate, task);
+                  const complete = isTaskComplete(currentActiveDate, task, db);
+                  const rec = (db.checkins[currentActiveDate] || {})[task.id] || { steps: {}, used: {} };
                   const pts = stepPoints(task);
 
                   let curIdx = -1;
@@ -621,12 +750,19 @@ export default function App() {
                               ? '太棒啦！任务圆满达成，自主探究闪闪发光！✨'
                               : 'Awesome work! Great inquiry and agency! Keep shining! 🌟'}
                           </p>
-                          <button
-                            className="btn sm line"
-                            onClick={() => handleUndoStep(today, task.id, task.steps[total - 1].id)}
-                          >
-                            {t('btn_undo_last', lang)}
-                          </button>
+                          {!isReadOnly && (
+                            <button
+                              className="btn sm line"
+                              onClick={() => handleUndoStep(currentActiveDate, task.id, task.steps[total - 1].id)}
+                            >
+                              {t('btn_undo_last', lang)}
+                            </button>
+                          )}
+                          {isReadOnly && (
+                            <div className="pill green" style={{ display: 'inline-flex', padding: '4px 12px', fontWeight: 900 }}>
+                              ✓ {lang === 'zh' ? '历史打卡已完成' : 'Recorded Complete'}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="th-steps-list">
@@ -649,10 +785,20 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div className="step-act">
-                                  {ok ? (
+                                  {isReadOnly ? (
+                                    ok ? (
+                                      <span className="readonly-step-pill done">
+                                        ✓ {lang === 'zh' ? '已完成' : 'Completed'}
+                                      </span>
+                                    ) : (
+                                      <span className="readonly-step-pill undone">
+                                        — {lang === 'zh' ? '未打卡' : 'Not Done'}
+                                      </span>
+                                    )
+                                  ) : ok ? (
                                     <button
                                       className="btn sm line"
-                                      onClick={() => handleUndoStep(today, task.id, s.id)}
+                                      onClick={() => handleUndoStep(currentActiveDate, task.id, s.id)}
                                     >
                                       {t('btn_undo_step', lang)}
                                     </button>
@@ -660,14 +806,14 @@ export default function App() {
                                     <>
                                       <button
                                         className="btn sm soft"
-                                        onClick={() => handleStartTimer(today, task.id, s.id)}
+                                        onClick={() => handleStartTimer(currentActiveDate, task.id, s.id)}
                                       >
                                         <Icon name="play" size={12} color="var(--ink)" />
                                         <span>{t('btn_start', lang)}</span>
                                       </button>
                                       <button
                                         className="btn sm green"
-                                        onClick={() => handleFinishStep(today, task.id, s.id)}
+                                        onClick={() => handleFinishStep(currentActiveDate, task.id, s.id)}
                                       >
                                         {t('btn_done', lang)}
                                       </button>
@@ -686,8 +832,10 @@ export default function App() {
 
                       <div className="th-footer">
                         <span className="hint">
-                          {lang === 'zh' ? '今日已获得: ' : 'Earned today: '}+
-                          {catEarnOn(task.categoryId, today)} {catPointEmoji(task.categoryId)}
+                          {currentActiveDate === today
+                            ? (lang === 'zh' ? '今日已获得: ' : 'Earned today: ')
+                            : (lang === 'zh' ? '当日已获得: ' : 'Earned on date: ')}+
+                          {catEarnOn(task.categoryId, currentActiveDate)} {catPointEmoji(task.categoryId)}
                         </span>
                         <span className="hint" style={{ color: 'var(--ink)', fontWeight: 900 }}>
                           {catName(task.categoryId)}: {catBalance(task.categoryId)}{' '}
@@ -1270,6 +1418,13 @@ export default function App() {
           <div className="scrollable-view">
             <nav className="parent-subnav">
               <button
+                className={`subnav-btn ${parentTab === 'dashboard' ? 'active' : ''}`}
+                onClick={() => setParentTab('dashboard')}
+              >
+                <Icon name="grid" size={18} />
+                <span>{t('parent_tab_dashboard', lang)}</span>
+              </button>
+              <button
                 className={`subnav-btn ${parentTab === 'tasks' ? 'active' : ''}`}
                 onClick={() => setParentTab('tasks')}
               >
@@ -1306,6 +1461,23 @@ export default function App() {
                 <span>{t('parent_tab_settings', lang)}</span>
               </button>
             </nav>
+
+            {/* Parent Tab: Dashboard */}
+            {parentTab === 'dashboard' && (
+              <ParentDashboard
+                db={db}
+                lang={lang}
+                catName={catName}
+                catColor={catColor}
+                catPointEmoji={catPointEmoji}
+                onEditTask={(task) => {
+                  setModal({
+                    type: 'task',
+                    draft: JSON.parse(JSON.stringify(task)),
+                  });
+                }}
+              />
+            )}
 
             {/* Parent Tab: Tasks */}
             {parentTab === 'tasks' && (
@@ -2073,19 +2245,18 @@ export default function App() {
                         <input
                           className="input"
                           id="childNameInput"
-                          defaultValue={db.settings.childName}
+                          value={childNameInput}
+                          onChange={(e) => setChildNameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveChildName();
+                            }
+                          }}
+                          placeholder={lang === 'zh' ? '输入孩子姓名' : "Enter child's name"}
                         />
                         <button
                           className="btn sm green"
-                          onClick={() => {
-                            const val = (document.getElementById('childNameInput') as HTMLInputElement)?.value?.trim();
-                            if (val) {
-                              updateDB((draft) => {
-                                draft.settings.childName = val;
-                              });
-                              showToast(t('saved_toast', lang), 'good');
-                            }
-                          }}
+                          onClick={handleSaveChildName}
                         >
                           {t('modal_save', lang)}
                         </button>
@@ -2190,6 +2361,18 @@ export default function App() {
           <span>{t('nav_tasks', lang)}</span>
         </button>
         <button
+          className={`bottom-tab-btn ${activeNav === 'history' ? 'active' : ''}`}
+          onClick={() => {
+            if (!selectedHistoryDate || selectedHistoryDate >= today) {
+              setSelectedHistoryDate(getYesterday(today));
+            }
+            setActiveNav('history');
+          }}
+        >
+          <Icon name="calendar" size={22} />
+          <span>{t('nav_history', lang)}</span>
+        </button>
+        <button
           className={`bottom-tab-btn ${activeNav === 'goals' ? 'active' : ''}`}
           onClick={() => setActiveNav('goals')}
         >
@@ -2288,13 +2471,13 @@ export default function App() {
             });
             showToast(lang === 'zh' ? '兑换记录已删除' : 'Record deleted');
           } else if (m.action === 'resetDemo') {
-            const currentName = db.settings.childName && db.settings.childName !== 'Hilson' ? db.settings.childName : 'IB Learner';
+            const currentName = db.settings?.childName || 'IB Learner';
             const fresh = seedDemo(currentName, currentUser.uid);
             setDb(fresh);
             saveWorkbenchToFirestore(currentUser.uid, fresh);
             showToast('Reset to demo', 'good');
           } else if (m.action === 'clearAll') {
-            const currentName = db.settings.childName && db.settings.childName !== 'Hilson' ? db.settings.childName : 'IB Learner';
+            const currentName = db.settings?.childName || 'IB Learner';
             const blank = blankDB(currentName, currentUser.uid);
             setDb(blank);
             saveWorkbenchToFirestore(currentUser.uid, blank);
@@ -2382,34 +2565,42 @@ export default function App() {
             showToast(lang === 'zh' ? '云端保存失败，请检查网络后重试' : 'Failed to save to cloud', 'bad');
           }
         }}
-        onSaveCat={(catId, pts) => {
-          updateDB((d) => {
-            const cat = d.categories.find((c) => c.id === catId);
-            if (cat) cat.points = pts;
-          });
-          setModal(null);
-          showToast(t('saved_toast', lang), 'good');
+        onSaveCat={async (catId, pts) => {
+          try {
+            await updateDB((d) => {
+              const cat = d.categories.find((c) => c.id === catId);
+              if (cat) cat.points = pts;
+            });
+            setModal(null);
+            showToast(t('saved_toast', lang), 'good');
+          } catch (err) {
+            showToast(lang === 'zh' ? '保存失败，请重试' : 'Failed to save', 'bad');
+          }
         }}
-        onSaveAdjust={(catId, delta, reason) => {
+        onSaveAdjust={async (catId, delta, reason) => {
           if (!delta) {
-            showToast('Enter non-zero value', 'bad');
+            showToast(lang === 'zh' ? '请输入非零分值' : 'Enter non-zero value', 'bad');
             return;
           }
-          updateDB((d) => {
-            d.ledger.push({
-              id: 'adj_' + Date.now().toString(36),
-              ts: Date.now(),
-              date: today,
-              catId,
-              delta,
-              reason: reason || (delta > 0 ? 'Parent Reward' : 'Parent Deduction'),
-              kind: 'adjust',
+          try {
+            await updateDB((d) => {
+              d.ledger.push({
+                id: 'adj_' + Date.now().toString(36),
+                ts: Date.now(),
+                date: today,
+                catId,
+                delta,
+                reason: reason || (delta > 0 ? 'Parent Reward' : 'Parent Deduction'),
+                kind: 'adjust',
+              });
             });
-          });
-          setModal(null);
-          showToast('Points adjusted', 'good');
+            setModal(null);
+            showToast(lang === 'zh' ? '积分已调整' : 'Points adjusted', 'good');
+          } catch (err) {
+            showToast(lang === 'zh' ? '保存失败，请重试' : 'Failed to adjust points', 'bad');
+          }
         }}
-        onSavePinChange={(p1, p2) => {
+        onSavePinChange={async (p1, p2) => {
           if (p1.length !== 4 || !/^\d{4}$/.test(p1)) {
             showToast(lang === 'zh' ? '请输入 4 位数字密码' : 'PIN must be 4 digits', 'bad');
             return;
@@ -2418,11 +2609,16 @@ export default function App() {
             showToast(t('pin_mismatch', lang), 'bad');
             return;
           }
-          updateDB((d) => {
-            d.settings.parentPin = p1;
-          });
-          setModal(null);
-          showToast(t('pin_changed', lang), 'good');
+          try {
+            await updateDB((d) => {
+              if (!d.settings) d.settings = { childName: 'IB Learner', parentPin: p1, stepMode: 'perStep' };
+              else d.settings.parentPin = p1;
+            });
+            setModal(null);
+            showToast(t('pin_changed', lang), 'good');
+          } catch (err) {
+            showToast(lang === 'zh' ? '修改密码失败，请重试' : 'Failed to change PIN', 'bad');
+          }
         }}
         onToast={showToast}
       />

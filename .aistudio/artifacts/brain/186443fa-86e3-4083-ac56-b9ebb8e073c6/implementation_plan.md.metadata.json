@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan to add Email/Password authentication (with optional Firebase built-in verification email & password reset) and 1-Click Guest/Anonymous Mode alongside Google Sign-In.",
+  "updatedAt":  "2026-10-25T02:18:37.043309604Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
