@@ -84,7 +84,8 @@ export function syncPointsIn(d: QuestPadDB, date: string, task: TaskDef): void {
 
   d.ledger = d.ledger.filter((e) => {
     if (e.kind !== 'earn') return true;
-    if (e.taskId !== task.id || e.date !== date) return true;
+    const isThisTask = e.taskId === task.id || (e.id && (e.id.startsWith(`${date}|${task.id}|`) || e.id.includes(`|${task.id}|`)));
+    if (!isThisTask || e.date !== date) return true;
     return !!wanted[e.id];
   });
 

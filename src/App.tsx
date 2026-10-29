@@ -65,6 +65,7 @@ export default function App() {
   // Database state
   const [db, setDb] = useState<QuestPadDB>(() => seedDemo('IB Learner'));
   const [childNameInput, setChildNameInput] = useState<string>(() => db.settings?.childName || 'IB Learner');
+  const [isSavingScoringMode, setIsSavingScoringMode] = useState<boolean>(false);
   const [modal, setModal] = useState<any>(null);
   const [toastMsg, setToastMsg] = useState<{ text: string; kind?: 'good' | 'bad' } | null>(null);
   const [celebrationData, setCelebrationData] = useState<{ task: any; phrase: string; emoji: string; pts: number } | null>(null);
@@ -209,6 +210,35 @@ export default function App() {
     }
   };
 
+  const handleSetScoringMode = async (mode: 'perStep' | 'onComplete') => {
+    const curMode = db.settings?.stepMode || 'perStep';
+    if (curMode === mode && syncStatus === 'synced') return;
+    setIsSavingScoringMode(true);
+    try {
+      await updateDB((draft) => {
+        if (!draft.settings) {
+          draft.settings = { childName: 'IB Learner', parentPin: '1234', stepMode: mode };
+        } else {
+          draft.settings.stepMode = mode;
+        }
+        draft.tasks.forEach((t) => {
+          Object.keys(draft.checkins).forEach((dt) => syncPointsIn(draft, dt, t));
+        });
+      });
+      showToast(
+        mode === 'onComplete'
+          ? (lang === 'zh' ? '计分规则已更新为：整项任务完成合并奖励' : 'Scoring rule saved: Entire quest completion')
+          : (lang === 'zh' ? '计分规则已更新为：每步即时获得积分' : 'Scoring rule saved: Every step earns points'),
+        'good'
+      );
+    } catch (err: any) {
+      console.error('Failed to update scoring mode:', err);
+      showToast(lang === 'zh' ? '计分规则同步失败，请重试' : 'Failed to sync scoring rule to Firebase', 'bad');
+    } finally {
+      setIsSavingScoringMode(false);
+    }
+  };
+
   const catEarnOn = (catId: string, dt: string) => {
     return db.ledger.reduce((acc, entry) => (entry.catId === catId && entry.date === dt && entry.delta > 0 ? acc + entry.delta : acc), 0);
   };
@@ -279,7 +309,16 @@ export default function App() {
       });
     } else {
       playSoundStepDone();
-      showToast(lang === 'zh' ? '完成一步，继续加油！' : 'Step complete! Keep going!', 'good');
+      if ((db.settings?.stepMode || 'perStep') === 'onComplete') {
+        showToast(
+          lang === 'zh'
+            ? '完成一步！所有步骤全部完成后结算任务积分 ✨'
+            : 'Step complete! Finish all steps to earn quest points! ✨',
+          'good'
+        );
+      } else {
+        showToast(lang === 'zh' ? '完成一步，继续加油！' : 'Step complete! Keep going!', 'good');
+      }
     }
   };
 
@@ -721,8 +760,13 @@ export default function App() {
                           <span className="tag" style={{ background: color, color: '#fff' }}>
                             {catName(task.categoryId)}
                           </span>
-                          <span className="tag pts-badge">
+                          <span className="tag pts-badge" title={(db.settings?.stepMode || 'perStep') === 'onComplete' ? (lang === 'zh' ? '全任务完成结算' : 'Earned on complete') : undefined}>
                             +{task.points} {catPointEmoji(task.categoryId)}
+                            {(db.settings?.stepMode || 'perStep') === 'onComplete' && (
+                              <span style={{ fontSize: 10, marginLeft: 3, opacity: 0.9 }}>
+                                ({lang === 'zh' ? '整项结算' : 'all-in-one'})
+                              </span>
+                            )}
                           </span>
                           {complete && (
                             <span
@@ -780,8 +824,16 @@ export default function App() {
                                 <div className="step-info">
                                   <div className="step-name">{s.title}</div>
                                   <div className="step-meta">
-                                    {t('time_target', lang, { min: s.minutes || 5 })} · +
-                                    {pts[idx] || 0} {catPointEmoji(task.categoryId)}
+                                    {t('time_target', lang, { min: s.minutes || 5 })}
+                                    {(db.settings?.stepMode || 'perStep') === 'onComplete' ? (
+                                      <span style={{ color: 'var(--muted)', marginLeft: 3 }}>
+                                        · {lang === 'zh' ? '计入进度 · 完成全任务得积分' : 'Tracks progress · Quest points on complete'}
+                                      </span>
+                                    ) : (
+                                      <span>
+                                        {' '}· +{pts[idx] || 0} {catPointEmoji(task.categoryId)}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="step-act">
@@ -1569,7 +1621,11 @@ export default function App() {
                                 <span key={s.id} className="step-pill-preview">
                                   <span className="s-num">{idx + 1}</span> {s.title}{' '}
                                   <span className="hint">
-                                    ({s.minutes}' / +{pts[idx] || 0} {catPointEmoji(tItem.categoryId)})
+                                    ({s.minutes}'
+                                    {(db.settings?.stepMode || 'perStep') === 'onComplete'
+                                      ? ` · ${lang === 'zh' ? '全完成给分' : 'all-on-complete'}`
+                                      : ` / +${pts[idx] || 0} ${catPointEmoji(tItem.categoryId)}`}
+                                    )
                                   </span>
                                 </span>
                               ))}
@@ -1720,39 +1776,75 @@ export default function App() {
                       <Icon name="star" size={22} color="var(--yellow)" />
                       <span>{t('scoring_mode', lang)}</span>
                     </h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span
+                        className={`pill ${(db.settings?.stepMode || 'perStep') === 'onComplete' ? 'green' : 'blue'}`}
+                        style={{ fontSize: 12, padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                      >
+                        <Icon name="check" size={13} color="currentColor" />
+                        <span>
+                          {(db.settings?.stepMode || 'perStep') === 'onComplete'
+                            ? (lang === 'zh' ? '当前生效：整项任务合并给分' : 'Active: Entire Quest Mode')
+                            : (lang === 'zh' ? '当前生效：每步即时结算' : 'Active: Per-Step Mode')}
+                        </span>
+                      </span>
+                    </div>
                   </div>
                   <div className="seg">
                     <button
-                      className={db.settings.stepMode === 'perStep' ? 'active on' : ''}
-                      onClick={() => {
-                        updateDB((draft) => {
-                          draft.settings.stepMode = 'perStep';
-                          draft.tasks.forEach((t) => {
-                            Object.keys(draft.checkins).forEach((dt) => syncPointsIn(draft, dt, t));
-                          });
-                        });
-                        showToast(lang === 'zh' ? '计分规则已更新' : 'Scoring updated', 'good');
-                      }}
+                      type="button"
+                      disabled={isSavingScoringMode}
+                      className={(db.settings?.stepMode || 'perStep') === 'perStep' ? 'active on' : ''}
+                      onClick={() => handleSetScoringMode('perStep')}
+                      style={{ opacity: isSavingScoringMode ? 0.7 : 1 }}
                     >
-                      {t('mode_per_step', lang)}
+                      {(db.settings?.stepMode || 'perStep') === 'perStep' ? '✓ ' : ''}{t('mode_per_step', lang)}
                     </button>
                     <button
-                      className={db.settings.stepMode === 'onComplete' ? 'active on' : ''}
-                      onClick={() => {
-                        updateDB((draft) => {
-                          draft.settings.stepMode = 'onComplete';
-                          draft.tasks.forEach((t) => {
-                            Object.keys(draft.checkins).forEach((dt) => syncPointsIn(draft, dt, t));
-                          });
-                        });
-                        showToast(lang === 'zh' ? '计分规则已更新' : 'Scoring updated', 'good');
-                      }}
+                      type="button"
+                      disabled={isSavingScoringMode}
+                      className={(db.settings?.stepMode || 'perStep') === 'onComplete' ? 'active on' : ''}
+                      onClick={() => handleSetScoringMode('onComplete')}
+                      style={{ opacity: isSavingScoringMode ? 0.7 : 1 }}
                     >
-                      {t('mode_on_complete', lang)}
+                      {(db.settings?.stepMode || 'perStep') === 'onComplete' ? '✓ ' : ''}{t('mode_on_complete', lang)}
                     </button>
                   </div>
-                  <div className="hint" style={{ marginTop: 8 }}>
-                    {t('mode_hint', lang)}
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: '10px 14px',
+                      borderRadius: 'var(--r-btn)',
+                      background: (db.settings?.stepMode || 'perStep') === 'onComplete' ? 'rgba(34, 197, 94, 0.08)' : 'var(--paper)',
+                      border: `1.5px solid ${(db.settings?.stepMode || 'perStep') === 'onComplete' ? 'var(--green)' : 'var(--line-soft)'}`,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      color: 'var(--ink)',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 18, lineHeight: 1.2 }}>
+                      {(db.settings?.stepMode || 'perStep') === 'onComplete' ? '🏆' : '⭐'}
+                    </span>
+                    <div>
+                      <div style={{ fontWeight: 800 }}>
+                        {(db.settings?.stepMode || 'perStep') === 'onComplete'
+                          ? (lang === 'zh' ? '整任务完成奖励模式生效中：' : 'Entire Quest Completion Mode Active:')
+                          : (lang === 'zh' ? '逐步即时奖励模式生效中：' : 'Per-Step Instant Reward Mode Active:')}
+                      </div>
+                      <div style={{ color: 'var(--muted)', marginTop: 2, fontWeight: 700 }}>
+                        {(db.settings?.stepMode || 'perStep') === 'onComplete'
+                          ? (lang === 'zh'
+                              ? '必须完成该任务的所有步骤后，一次性合并结算全部任务积分。中间单个步骤仅记录完成进度，不单独加分。'
+                              : 'Points are awarded only after all steps of the quest are finished. Individual steps track progress without granting partial points.')
+                          : (lang === 'zh'
+                              ? '任务总积分按步骤平摊，每完成一步即刻获得该步积分（余数归最后一步）。'
+                              : 'Task points are divided evenly across steps. Each step awards its portion immediately upon completion.')}
+                      </div>
+                    </div>
                   </div>
                 </section>
 

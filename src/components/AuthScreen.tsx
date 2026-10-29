@@ -59,6 +59,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ lang, onSwitchLang, onTo
   const getFriendlyErrorMessage = (err: any) => {
     const code = err?.code || '';
     switch (code) {
+      case 'auth/admin-restricted-operation':
+      case 'auth/operation-not-allowed':
+        return lang === 'zh'
+          ? 'Firebase 尚未开启此登录方式。请在 Firebase 控制台的 Authentication > Sign-in method 中将“匿名 (Anonymous)”或“电子邮件/密码”开启启用。'
+          : 'This login method is not enabled in Firebase yet. Please enable "Anonymous" or "Email/Password" in Firebase Console > Authentication > Sign-in method.';
       case 'auth/email-already-in-use':
         return t('auth_email_in_use', lang);
       case 'auth/invalid-email':
